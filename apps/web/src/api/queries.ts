@@ -1,5 +1,6 @@
 import {
   ArchiveFolderResponse,
+  AuthConfigResponse,
   FileDiff,
   FolderRef,
   FolderSummary,
@@ -39,6 +40,7 @@ export const queryKeys = {
   diff: (slug: string, from: number, to: number) => ['skill', slug, 'diff', from, to] as const,
   tokens: ['tokens'] as const,
   users: ['users'] as const,
+  authConfig: ['auth-config'] as const,
 };
 
 function skillPath(slug: string): string {
@@ -129,6 +131,18 @@ export function useTokens() {
   return useQuery({
     queryKey: queryKeys.tokens,
     queryFn: () => api.get('/api/tokens', TokenSummary.array()),
+  });
+}
+
+/**
+ * `GET /api/auth/config` (no session needed): password form or single sign-on. Fixed for the
+ * server's lifetime, so it is fetched once.
+ */
+export function useAuthConfig() {
+  return useQuery({
+    queryKey: queryKeys.authConfig,
+    queryFn: () => api.get('/api/auth/config', AuthConfigResponse),
+    staleTime: Infinity,
   });
 }
 

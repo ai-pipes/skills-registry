@@ -1,4 +1,4 @@
-import type { ErrorBody, FolderSummary, MeResponse } from '@skills/contracts';
+import type { AuthMethod, ErrorBody, FolderSummary, MeResponse } from '@skills/contracts';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { devopsFolder, generalFolder, oldFolder } from '../fixtures.ts';
@@ -16,6 +16,11 @@ export function meHandler(me: MeResponse | null) {
   );
 }
 
+/** `GET /api/auth/config`: how people sign in (`password` by default). */
+export function authConfigHandler(method: AuthMethod = 'password') {
+  return http.get('/api/auth/config', () => HttpResponse.json({ method }));
+}
+
 /** `GET /api/folders?status=`: `folders` filtered by status (`active` by default, `all` keeps all). */
 export function foldersHandler(
   folders: FolderSummary[] = [generalFolder, devopsFolder, oldFolder],
@@ -28,8 +33,11 @@ export function foldersHandler(
   });
 }
 
-/** Default handlers: nobody is signed in. Tests add their own with `server.use(...)`. */
-const handlers = [meHandler(null), foldersHandler()];
+/**
+ * Default handlers: nobody is signed in, password sign-in. Tests add their own with
+ * `server.use(...)`.
+ */
+const handlers = [meHandler(null), authConfigHandler(), foldersHandler()];
 
 /** The msw server shared by all web tests (started in test/setup.ts). */
 export const server = setupServer(...handlers);

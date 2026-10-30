@@ -33,6 +33,17 @@ export const strings = {
       `Too many attempts. Try again in ${minutes} ${plural(minutes, { one: 'minute', other: 'minutes' })}.`,
     cookieBlocked:
       'The browser did not store the session cookie. The server requires HTTPS (COOKIE_SECURE=true). Open the service over https:// or set COOKIE_SECURE=false on an internal network.',
+    loadingMethod: 'Loading sign-in options',
+    ssoHint: 'Sign in with your organization account.',
+    ssoSubmit: 'Sign in with SSO',
+    ssoErrorTitle: 'Could not sign in',
+    ssoErrors: {
+      invalid_state: 'The sign-in has expired. Try again.',
+      not_allowed: 'Your account is not in an allowed group. Ask an administrator for access.',
+      disabled: 'Your account is disabled.',
+      idp_unavailable: 'The identity provider is unavailable. Try again later.',
+      internal: 'Something went wrong while signing in. Try again.',
+    } as Record<string, string>,
   },
   access: {
     forbidden: 'Access denied',
@@ -256,7 +267,9 @@ export const strings = {
       login: 'Username',
       role: 'Role',
       status: 'Status',
+      email: 'Email',
       createdAt: 'Created',
+      lastLogin: 'Last sign-in',
       actions: 'Actions',
     },
     you: 'you',
@@ -275,6 +288,10 @@ export const strings = {
     disabledToast: 'User disabled',
     enabledToast: 'User enabled',
     cannotDisableSelf: 'You cannot disable yourself',
+    ssoBadge: 'SSO',
+    never: 'Never',
+    ssoNote:
+      'People are added and their roles managed in the identity provider: membership in the admin and member groups decides who signs in and as what.',
   },
   editor: {
     newTitle: 'New skill',

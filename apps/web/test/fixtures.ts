@@ -1,4 +1,10 @@
-import type { FolderSummary, MeResponse, SkillSource, SkillSummary } from '@skills/contracts';
+import type {
+  FolderSummary,
+  MeResponse,
+  SkillSource,
+  SkillSummary,
+  UserSummary,
+} from '@skills/contracts';
 
 export const adminMe: MeResponse = { login: 'admin', role: 'admin' };
 
@@ -47,4 +53,38 @@ export const importedSource: SkillSource = {
   path: 'skills/mcp-builder',
   ref: 'main',
   syncedVersion: 1,
+};
+
+/** Users as `GET /api/users` lists them: `admin` (local), `alice` (SSO), `bob` (disabled, never signed in). */
+export const adminUser: UserSummary = {
+  id: '11111111-1111-4111-8111-111111111111',
+  login: 'admin',
+  role: 'admin',
+  disabled: false,
+  createdAt: '2026-10-01T12:00:00.000Z',
+  sso: false,
+  email: null,
+  lastLoginAt: '2026-10-29T12:00:00.000Z',
+};
+
+export const aliceUser: UserSummary = {
+  id: '22222222-2222-4222-8222-222222222222',
+  login: 'alice',
+  role: 'member',
+  disabled: false,
+  createdAt: '2026-10-02T12:00:00.000Z',
+  sso: true,
+  email: 'alice@example.com',
+  lastLoginAt: '2026-10-28T12:00:00.000Z',
+};
+
+export const bobUser: UserSummary = {
+  id: '33333333-3333-4333-8333-333333333333',
+  login: 'bob',
+  role: 'member',
+  disabled: true,
+  createdAt: '2026-10-03T12:00:00.000Z',
+  sso: false,
+  email: null,
+  lastLoginAt: null,
 };
