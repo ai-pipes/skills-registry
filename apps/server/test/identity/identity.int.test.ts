@@ -29,6 +29,7 @@ beforeEach(async () => {
   time = { now: new Date() };
   deps = {
     ...createPgIdentity(pg.sql),
+    sso: null,
     audit: new PgAuditLog(pg.sql),
     clock: { now: () => time.now },
   };

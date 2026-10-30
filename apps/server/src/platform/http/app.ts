@@ -5,7 +5,7 @@ import { type Context, Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { folderRoutes } from '../../modules/catalog/interfaces/http/folders.ts';
 import { skillRoutes } from '../../modules/catalog/interfaces/http/skills.ts';
-import { authRoutes } from '../../modules/identity/interfaces/http/auth.ts';
+import { authRoutes, PUBLIC_AUTH_PATHS } from '../../modules/identity/interfaces/http/auth.ts';
 import {
   hasSessionCookie,
   requireSessionOrToken,
@@ -115,12 +115,11 @@ export function createHttpApp(c: Container, opts: HttpAppOptions = {}): HttpApp 
     }
   });
 
-  // Every /api route except login and logout needs a session or a Bearer token (ADR 0008).
+  // Every /api route except login, logout, the auth config and single sign-on needs a session
+  // or a Bearer token (ADR 0008).
   const session = requireSessionOrToken(c.identity);
   app.use('/api/*', (ctx, next) =>
-    ctx.req.path === '/api/auth/login' || ctx.req.path === '/api/auth/logout'
-      ? next()
-      : session(ctx, next),
+    PUBLIC_AUTH_PATHS.has(ctx.req.path) ? next() : session(ctx, next),
   );
   const search = async (query: string, folders?: string[]) =>
     (
@@ -130,7 +129,14 @@ export function createHttpApp(c: Container, opts: HttpAppOptions = {}): HttpApp 
         ...(folders ? { folders } : {}),
       })
     ).map((h) => h.slug);
-  app.route('/api/auth', authRoutes(c.identity, { cookieSecure: config.cookieSecure }));
+  app.route(
+    '/api/auth',
+    authRoutes(c.identity, {
+      cookieSecure: config.cookieSecure,
+      // The message may carry provider answers or user input: name and stack frames only.
+      logError: (error, message) => logger.error({ err: errorFields(error) }, message),
+    }),
+  );
   const logins = (ids: string[]) => loginsByIds(c.identity, ids);
   app.route('/api/skills', skillRoutes(c.catalog, search, logins));
   app.route('/api/folders', folderRoutes(c.catalog));

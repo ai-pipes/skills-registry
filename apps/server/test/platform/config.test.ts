@@ -115,3 +115,71 @@ describe('loadConfig', () => {
     expect(c.adminPassword).toBeUndefined();
   });
 });
+
+describe('single sign-on settings', () => {
+  const oidc = {
+    OIDC_ISSUER: 'https://id.example.com/realms/main',
+    OIDC_CLIENT_ID: 'skills',
+    OIDC_CLIENT_SECRET: 'secret',
+  };
+
+  it('is off without OIDC settings (password sign-in)', () => {
+    expect(loadConfig(base).oidc).toBeUndefined();
+    expect(
+      loadConfig({ ...base, OIDC_ISSUER: '', OIDC_CLIENT_ID: '', OIDC_CLIENT_SECRET: '' }).oidc,
+    ).toBeUndefined();
+  });
+
+  it('is on with all three, with default groups, scopes and claim', () => {
+    expect(loadConfig({ ...base, ...oidc }).oidc).toEqual({
+      issuer: oidc.OIDC_ISSUER,
+      clientId: 'skills',
+      clientSecret: 'secret',
+      loginGroup: 'skills-users',
+      adminGroup: 'skills-admins',
+      scopes: 'openid profile email groups',
+      groupsClaim: 'groups',
+    });
+  });
+
+  it('parses overrides; scopes may be comma or space separated, deduplicated', () => {
+    const c = loadConfig({
+      ...base,
+      ...oidc,
+      OIDC_LOGIN_GROUP: 'staff',
+      OIDC_ADMIN_GROUP: 'ops',
+      OIDC_SCOPES: 'openid, profile  roles,openid',
+      OIDC_GROUPS_CLAIM: 'urn:zitadel:iam:org:project:roles',
+    });
+    expect(c.oidc).toMatchObject({
+      loginGroup: 'staff',
+      adminGroup: 'ops',
+      scopes: 'openid profile roles',
+      groupsClaim: 'urn:zitadel:iam:org:project:roles',
+    });
+  });
+
+  it('requires openid in the scopes', () => {
+    expect(() => loadConfig({ ...base, ...oidc, OIDC_SCOPES: 'profile email' })).toThrow(
+      /OIDC_SCOPES: must include openid/,
+    );
+  });
+
+  it('rejects partial settings, naming each missing variable', () => {
+    let message = '';
+    try {
+      loadConfig({ ...base, OIDC_ISSUER: oidc.OIDC_ISSUER });
+    } catch (e) {
+      expect(e).toBeInstanceOf(ConfigError);
+      if (e instanceof Error) message = e.message;
+    }
+    expect(message).toMatch(/OIDC_CLIENT_ID: required/);
+    expect(message).toMatch(/OIDC_CLIENT_SECRET: required/);
+    expect(message).not.toMatch(/OIDC_ISSUER: /);
+    expect(() => loadConfig({ ...base, OIDC_CLIENT_SECRET: 'x' })).toThrow(/OIDC_ISSUER: required/);
+  });
+
+  it('rejects an issuer that is not a URL', () => {
+    expect(() => loadConfig({ ...base, ...oidc, OIDC_ISSUER: 'nope' })).toThrow(/OIDC_ISSUER/);
+  });
+});

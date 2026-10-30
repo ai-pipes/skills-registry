@@ -75,9 +75,9 @@ describe('migrate', () => {
       try {
         await migrate(sql, dir);
         if (edit) await edit(sql);
-        expect(await migrate(sql, migrationsDir)).toEqual([
+        expect((await migrate(sql, migrationsDir))[0]).toBe(
           '0009_catalog_general_folder_english.sql',
-        ]);
+        );
         const [row] =
           await sql`select name, description from catalog.folders where slug = 'general'`;
         return { ...row };
@@ -147,5 +147,36 @@ describe('migrate', () => {
     expect(
       defs.some((d) => /documents_folder_idx ON search\.documents USING btree \(folder\)/.test(d)),
     ).toBe(true);
+  });
+
+  it('0010 keeps existing password users unlinked, with no groups', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'mig-0010-'));
+    const old = (await readdir(migrationsDir)).filter((n) => /^000\d_/.test(n));
+    await Promise.all(old.map((f) => copyFile(join(migrationsDir, f), join(dir, f))));
+    await pg.sql.unsafe('create database mig_sso');
+    const u = new URL(pg.url);
+    u.pathname = '/mig_sso';
+    const sql = createDb(u.toString());
+    try {
+      await migrate(sql, dir);
+      await sql`insert into identity.users (login, password_hash, role) values ('root', 'h', 'admin')`;
+      expect(await migrate(sql, migrationsDir)).toEqual(['0010_identity_sso.sql']);
+      const [row] = await sql`
+        select password_hash, oidc_sub, email, groups, last_login_at from identity.users`;
+      expect({ ...row }).toEqual({
+        password_hash: 'h',
+        oidc_sub: null,
+        email: null,
+        groups: [],
+        last_login_at: null,
+      });
+      // SSO users have no password; a provider account links to at most one user.
+      await sql`insert into identity.users (login, role, oidc_sub) values ('anna', 'member', 's1')`;
+      await expect(
+        sql`insert into identity.users (login, role, oidc_sub) values ('anna2', 'member', 's1')`,
+      ).rejects.toThrow(/unique/);
+    } finally {
+      await sql.end();
+    }
   });
 });

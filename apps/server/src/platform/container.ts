@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { type CatalogDeps, createPgCatalog, nodeHasher } from '../modules/catalog/index.ts';
-import { createPgIdentity, type IdentityDeps } from '../modules/identity/index.ts';
+import {
+  createPgIdentity,
+  type IdentityDeps,
+  type OidcProvider,
+  OpenidProvider,
+} from '../modules/identity/index.ts';
 import {
   createCatalogSkillReader,
   createPgSearch,
@@ -25,7 +30,35 @@ export type Container = {
   sql: Sql;
 };
 
-export type ContainerOptions = { embedder?: Embedder; logger?: Logger; clock?: Clock };
+export type ContainerOptions = {
+  embedder?: Embedder;
+  logger?: Logger;
+  clock?: Clock;
+  /** Replaces the OIDC provider built from `config.oidc` (tests); ignored without `config.oidc`. */
+  oidc?: OidcProvider;
+};
+
+/** The provider sends the browser back here after single sign-on. */
+export function ssoRedirectUri(publicUrl: string): string {
+  return `${publicUrl.replace(/\/+$/, '')}/api/auth/sso/callback`;
+}
+
+function ssoDeps(config: Config, logger: Logger, override?: OidcProvider): IdentityDeps['sso'] {
+  const oidc = config.oidc;
+  if (!oidc) return null;
+  const provider =
+    override ??
+    new OpenidProvider({
+      issuer: oidc.issuer,
+      clientId: oidc.clientId,
+      clientSecret: oidc.clientSecret,
+      redirectUri: ssoRedirectUri(config.publicUrl),
+      scopes: oidc.scopes,
+      groupsClaim: oidc.groupsClaim,
+      logger,
+    });
+  return { provider, policy: { loginGroup: oidc.loginGroup, adminGroup: oidc.adminGroup } };
+}
 
 function createEmbedder(config: Config): Embedder {
   if (config.embedder === 'openai-compatible') {
@@ -51,7 +84,12 @@ export function buildContainer(config: Config, sql: Sql, opts: ContainerOptions 
     clock,
     audit,
   };
-  const identity: IdentityDeps = { ...createPgIdentity(sql), audit, clock };
+  const identity: IdentityDeps = {
+    ...createPgIdentity(sql),
+    sso: ssoDeps(config, logger, opts.oidc),
+    audit,
+    clock,
+  };
   const search: SearchDeps = {
     ...createPgSearch(sql),
     embedder: opts.embedder ?? createEmbedder(config),

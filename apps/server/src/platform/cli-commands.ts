@@ -1,5 +1,11 @@
 import { parseArgs } from 'node:util';
-import { actAs, createToken, provisionUser } from '../modules/identity/index.ts';
+import {
+  actAs,
+  createToken,
+  linkSso,
+  provisionUser,
+  unlinkSso,
+} from '../modules/identity/index.ts';
 import { connectCommand } from '../modules/identity/interfaces/http/tokens.ts';
 import { reindexAll } from '../modules/search/index.ts';
 import { DomainError } from '../shared-kernel/index.ts';
@@ -18,7 +24,12 @@ const USAGE = `Usage: node dist/cli.js <command>
   create-user <login> --role admin|member
       Create a user; the password is read from stdin.
   create-token <login> --name <name>
-      Create an API token for <login>; prints the token and the claude mcp add command.`;
+      Create an API token for <login>; prints the token and the claude mcp add command.
+  link-sso <login> <sub>
+      Link <login> to the identity provider account <sub>: single sign-on then lands on this
+      user, keeping its id, tokens and authorship.
+  unlink-sso <login>
+      Remove the link to the identity provider; API tokens keep working.`;
 
 /** Bad invocation: printed with the usage, exit code 2. */
 class UsageError extends Error {}
@@ -83,10 +94,31 @@ const createTokenCommand: Command = async (args, c, io) => {
   return 0;
 };
 
+const linkSsoCommand: Command = async (args, c, io) => {
+  const { positionals } = parse(args, {}, 2);
+  const [login = '', sub = ''] = positionals;
+  if (sub.trim() === '') throw new UsageError('<sub> must not be empty');
+  const r = await linkSso(c.identity, { login, sub });
+  if (!r.ok) throw r.error;
+  io.out(r.value.changed ? `linked "${login.trim()}" to ${sub.trim()}` : 'already linked');
+  return 0;
+};
+
+const unlinkSsoCommand: Command = async (args, c, io) => {
+  const { positionals } = parse(args, {}, 1);
+  const login = positionals[0] ?? '';
+  const r = await unlinkSso(c.identity, { login });
+  if (!r.ok) throw r.error;
+  io.out(r.value.changed ? `unlinked "${login.trim()}"` : 'not linked');
+  return 0;
+};
+
 const COMMANDS: Record<string, Command> = {
   reindex: reindexCommand,
   'create-user': createUserCommand,
   'create-token': createTokenCommand,
+  'link-sso': linkSsoCommand,
+  'unlink-sso': unlinkSsoCommand,
 };
 
 /**
