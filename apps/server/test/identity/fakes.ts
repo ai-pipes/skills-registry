@@ -1,7 +1,10 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import type {
   IdentityDeps,
+  OidcProvider,
   PasswordHasher,
+  PendingLogin,
+  PendingLoginRepository,
   RateLimiter,
   SessionRecord,
   SessionRepository,
@@ -11,7 +14,12 @@ import type {
   UserRepository,
 } from '../../src/modules/identity/application/ports.ts';
 import { InMemoryAuditThrottle } from '../../src/modules/identity/infrastructure/audit-throttle.ts';
-import type { User } from '../../src/modules/identity/domain/user.ts';
+import {
+  IdentityError,
+  type OidcClaims,
+  type Role,
+  type User,
+} from '../../src/modules/identity/domain/user.ts';
 
 class FakeHasher implements PasswordHasher {
   verifyCalls = 0;
@@ -57,6 +65,10 @@ class FakeGate {
   }
 }
 
+type NewPasswordUser = Pick<User, 'login' | 'passwordHash' | 'role' | 'createdAt'>;
+
+const ssoDefaults = { oidcSub: null, email: null, groups: [], lastLoginAt: null };
+
 class MemUsers implements UserRepository {
   rows: User[] = [];
   async findByLogin(login: string) {
@@ -68,19 +80,19 @@ class MemUsers implements UserRepository {
   async count() {
     return this.rows.length;
   }
-  async insertIfEmpty(u: Pick<User, 'login' | 'passwordHash' | 'role' | 'createdAt'>) {
+  async insertIfEmpty(u: NewPasswordUser) {
     if (this.rows.length > 0) return null;
     // Check and push happen in one synchronous step, like the atomic SQL statement.
-    const user: User = { ...u, id: randomUUID(), disabled: false };
+    const user: User = { ...ssoDefaults, ...u, id: randomUUID(), disabled: false };
     this.rows.push(user);
     return user;
   }
   async list() {
     return [...this.rows];
   }
-  async insert(u: Pick<User, 'login' | 'passwordHash' | 'role' | 'createdAt'>) {
+  async insert(u: NewPasswordUser) {
     if (await this.findByLogin(u.login)) return null;
-    const user: User = { ...u, id: randomUUID(), disabled: false };
+    const user: User = { ...ssoDefaults, ...u, id: randomUUID(), disabled: false };
     this.rows.push(user);
     return user;
   }
@@ -101,7 +113,87 @@ class MemUsers implements UserRepository {
     u.disabled = disabled;
     return true;
   }
+  async findBySub(sub: string) {
+    return this.rows.find((u) => u.oidcSub === sub) ?? null;
+  }
+  /** Runs before each insertSso, e.g. to simulate a concurrent first login. */
+  beforeInsertSso: (() => void) | null = null;
+  async insertSso(u: {
+    login: string;
+    oidcSub: string;
+    email: string | null;
+    groups: string[];
+    role: Role;
+    createdAt: Date;
+  }) {
+    this.beforeInsertSso?.();
+    if ((await this.findByLogin(u.login)) || (await this.findBySub(u.oidcSub))) return null;
+    const user: User = {
+      ...u,
+      id: randomUUID(),
+      passwordHash: null,
+      disabled: false,
+      lastLoginAt: null,
+    };
+    this.rows.push(user);
+    return user;
+  }
+  async recordSsoLogin(id: string, input: { email: string | null; groups: string[]; role: Role }) {
+    const u = this.rows.find((x) => x.id === id);
+    if (!u) throw new Error('no such user');
+    Object.assign(u, input);
+    return { ...u };
+  }
+  async setLastLogin(id: string, at: Date) {
+    const u = this.rows.find((x) => x.id === id);
+    if (u) u.lastLoginAt = at;
+  }
+  async setOidcSub(id: string, sub: string | null) {
+    const u = this.rows.find((x) => x.id === id);
+    if (!u) return false;
+    u.oidcSub = sub;
+    return true;
+  }
 }
+
+class MemPendingLogins implements PendingLoginRepository {
+  rows: PendingLogin[] = [];
+  async insert(p: PendingLogin) {
+    this.rows.push({ ...p });
+  }
+  async consume(state: string) {
+    const found = this.rows.find((r) => r.state === state) ?? null;
+    this.rows = this.rows.filter((r) => r.state !== state);
+    return found;
+  }
+}
+
+/** A scripted identity provider: `claims` is what the next exchange returns, `fail` what it throws. */
+class FakeOidc implements OidcProvider {
+  claims: OidcClaims = { sub: 'sub-1', preferredUsername: 'anna', email: null, groups: [] };
+  /** Thrown by `authorizationUrl` when set. */
+  startError: unknown = null;
+  /** Thrown by `exchange` when set. */
+  exchangeError: unknown = null;
+  exchanges: { code: string; codeVerifier: string; nonce: string; iss?: string }[] = [];
+  lastChallenge = '';
+  async authorizationUrl(input: { state: string; codeChallenge: string; nonce: string }) {
+    if (this.startError !== null) throw this.startError;
+    this.lastChallenge = input.codeChallenge;
+    const url = new URL('https://idp.example/authorize');
+    url.searchParams.set('state', input.state);
+    url.searchParams.set('nonce', input.nonce);
+    url.searchParams.set('code_challenge', input.codeChallenge);
+    return url;
+  }
+  async exchange(input: { code: string; codeVerifier: string; nonce: string; iss?: string }) {
+    this.exchanges.push(input);
+    if (this.exchangeError !== null) throw this.exchangeError;
+    return this.claims;
+  }
+}
+
+export const idpDown = () => new IdentityError('idp_unavailable', 'down');
 
 class MemTokens implements TokenRepository {
   rows: TokenRecord[] = [];
@@ -154,6 +246,7 @@ class MemSessions implements SessionRepository {
 
 const testSha256: Sha256 = {
   hex: (s) => createHash('sha256').update(s).digest('hex'),
+  base64url: (s) => createHash('sha256').update(s).digest('base64url'),
   timingSafeEqual: (a, b) => {
     const x = Buffer.from(a);
     const y = Buffer.from(b);
@@ -166,6 +259,8 @@ export interface TestEnv {
   users: MemUsers;
   tokens: MemTokens;
   sessions: MemSessions;
+  pendingLogins: MemPendingLogins;
+  oidc: FakeOidc;
   hasher: FakeHasher;
   loginLimiter: FakeLimiter;
   audit: {
@@ -177,8 +272,13 @@ export interface TestEnv {
   time: { now: Date };
 }
 
-export function makeEnv(): TestEnv {
+const TEST_POLICY = { loginGroup: 'skills-users', adminGroup: 'skills-admins' };
+
+/** In-memory identity; with `sso` the single sign-on mode is on (FakeOidc, TEST_POLICY). */
+export function makeEnv(opts: { sso?: boolean } = {}): TestEnv {
   const users = new MemUsers();
+  const pendingLogins = new MemPendingLogins();
+  const oidc = new FakeOidc();
   const tokens = new MemTokens();
   const sessions = new MemSessions();
   const hasher = new FakeHasher();
@@ -189,6 +289,8 @@ export function makeEnv(): TestEnv {
     users,
     tokens,
     sessions,
+    pendingLogins,
+    sso: opts.sso ? { provider: oidc, policy: TEST_POLICY } : null,
     hasher,
     sha256: testSha256,
     loginLimiter,
@@ -204,7 +306,18 @@ export function makeEnv(): TestEnv {
     auditThrottle: new InMemoryAuditThrottle(),
     random: { bytes: (n) => new Uint8Array(randomBytes(n)) },
   };
-  return { deps, users, tokens, sessions, hasher, loginLimiter, audit, time };
+  return {
+    deps,
+    users,
+    tokens,
+    sessions,
+    pendingLogins,
+    oidc,
+    hasher,
+    loginLimiter,
+    audit,
+    time,
+  };
 }
 
 export async function seedUser(

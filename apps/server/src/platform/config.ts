@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DEFAULT_GROUPS_CLAIM, DEFAULT_OIDC_SCOPES } from '../modules/identity/index.ts';
 import { DEFAULT_MIN_SIMILARITY } from '../modules/search/index.ts';
 
 const bool = (fallback: boolean) =>
@@ -6,6 +7,16 @@ const bool = (fallback: boolean) =>
     .enum(['true', 'false'])
     .optional()
     .transform((v) => (v === undefined ? fallback : v === 'true'));
+
+/** Space- or comma-separated scopes, normalised to one space; `openid` is required. */
+const oidcScopes = z
+  .string()
+  .default(DEFAULT_OIDC_SCOPES)
+  .transform((v) => v.split(/[\s,]+/).filter((s) => s !== ''))
+  .refine((list) => list.includes('openid'), { message: 'must include openid' })
+  .transform((list) => [...new Set(list)].join(' '));
+
+const OIDC_REQUIRED = ['OIDC_ISSUER', 'OIDC_CLIENT_ID', 'OIDC_CLIENT_SECRET'] as const;
 
 const schema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
@@ -33,6 +44,27 @@ const schema = z.object({
   MODEL_DIR: z.string().default('/app/models'),
   SEARCH_MIN_SIMILARITY: z.coerce.number().min(0).max(1).default(DEFAULT_MIN_SIMILARITY),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+  // Single sign-on: all of ISSUER, CLIENT_ID and CLIENT_SECRET, or none of them.
+  OIDC_ISSUER: z.url().optional(),
+  OIDC_CLIENT_ID: z.string().min(1).optional(),
+  OIDC_CLIENT_SECRET: z.string().min(1).optional(),
+  OIDC_LOGIN_GROUP: z.string().min(1).default('skills-users'),
+  OIDC_ADMIN_GROUP: z.string().min(1).default('skills-admins'),
+  OIDC_SCOPES: oidcScopes,
+  OIDC_GROUPS_CLAIM: z.string().min(1).default(DEFAULT_GROUPS_CLAIM),
+});
+
+/** Partial OIDC settings are a mistake, not "SSO off": name each missing variable. */
+const checkedSchema = schema.superRefine((e, ctx) => {
+  const missing = OIDC_REQUIRED.filter((k) => e[k] === undefined);
+  if (missing.length === 0 || missing.length === OIDC_REQUIRED.length) return;
+  for (const key of missing) {
+    ctx.addIssue({
+      code: 'custom',
+      path: [key],
+      message: `required when any of ${OIDC_REQUIRED.join(', ')} is set`,
+    });
+  }
 });
 
 /** Invalid environment: the message names each bad variable, one per line. */
@@ -42,6 +74,21 @@ export class ConfigError extends Error {
     super(`Invalid configuration:\n${lines.join('\n')}`);
     this.name = 'ConfigError';
   }
+}
+
+/** Single sign-on through an OIDC provider; when present the web UI signs in with SSO only. */
+interface OidcConfig {
+  issuer: string;
+  clientId: string;
+  clientSecret: string;
+  /** Provider group whose members may sign in (as `member`). */
+  loginGroup: string;
+  /** Provider group whose members are admins. */
+  adminGroup: string;
+  /** Scopes of the authorization request, space-separated, always with `openid`. */
+  scopes: string;
+  /** ID token / UserInfo claim holding the person's groups. */
+  groupsClaim: string;
 }
 
 export interface Config {
@@ -64,6 +111,8 @@ export interface Config {
   /** Cosine-similarity floor for vector search candidates (ADR 0005). */
   searchMinSimilarity: number;
   logLevel: string;
+  /** Set when OIDC_ISSUER, OIDC_CLIENT_ID and OIDC_CLIENT_SECRET are all set. */
+  oidc?: OidcConfig;
 }
 
 /** loadConfig for entry points: on bad env print the ConfigError message (no stack) and exit 1. */
@@ -80,7 +129,7 @@ export function loadConfigOrExit(env: NodeJS.ProcessEnv): Config {
 export function loadConfig(env: NodeJS.ProcessEnv): Config {
   // An empty value (`KEY=` in .env) means "unset", so defaults and optionality apply to it.
   const set = Object.fromEntries(Object.entries(env).filter(([, v]) => v !== ''));
-  const parsed = schema.safeParse(set);
+  const parsed = checkedSchema.safeParse(set);
   if (!parsed.success) throw new ConfigError(parsed.error.issues);
   const e = parsed.data;
   const config: Config = {
@@ -101,5 +150,20 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
   if (e.ADMIN_PASSWORD !== undefined) config.adminPassword = e.ADMIN_PASSWORD;
   if (e.EMBEDDER_URL !== undefined) config.embedderUrl = e.EMBEDDER_URL;
   if (e.EMBEDDER_MODEL !== undefined) config.embedderModel = e.EMBEDDER_MODEL;
+  if (
+    e.OIDC_ISSUER !== undefined &&
+    e.OIDC_CLIENT_ID !== undefined &&
+    e.OIDC_CLIENT_SECRET !== undefined
+  ) {
+    config.oidc = {
+      issuer: e.OIDC_ISSUER,
+      clientId: e.OIDC_CLIENT_ID,
+      clientSecret: e.OIDC_CLIENT_SECRET,
+      loginGroup: e.OIDC_LOGIN_GROUP,
+      adminGroup: e.OIDC_ADMIN_GROUP,
+      scopes: e.OIDC_SCOPES,
+      groupsClaim: e.OIDC_GROUPS_CLAIM,
+    };
+  }
   return config;
 }

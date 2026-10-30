@@ -29,7 +29,13 @@ const { logger } = container;
 const applied = await migrate(sql, findMigrationsDir(import.meta.url));
 logger.info({ applied }, 'migrations applied');
 
-if (config.adminLogin !== undefined && config.adminPassword !== undefined) {
+if (config.oidc !== undefined) {
+  // Admins come from the provider's admin group; a password admin could not sign in anyway.
+  if (config.adminLogin !== undefined || config.adminPassword !== undefined) {
+    logger.warn('single sign-on is configured: ADMIN_LOGIN/ADMIN_PASSWORD are ignored');
+  }
+  logger.info({ issuer: config.oidc.issuer }, 'web sign-in: single sign-on');
+} else if (config.adminLogin !== undefined && config.adminPassword !== undefined) {
   const boot = await bootstrapAdmin(container.identity, {
     login: config.adminLogin,
     password: config.adminPassword,

@@ -13,6 +13,7 @@
     "@skills/contracts": "workspace:*",
     "diff": "9.0.0",
     "hono": "4.13.14",
+    "openid-client": "6.8.8",
     "pino": "10.4.0",
     "postgres": "3.4.9",
     "yaml": "2.9.1",

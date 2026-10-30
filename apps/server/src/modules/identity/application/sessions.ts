@@ -24,6 +24,8 @@ export async function login(
   deps: IdentityDeps,
   input: { login: string; password: string; ip: string },
 ): Promise<Result<{ sessionId: string; expiresAt: Date }, IdentityError>> {
+  // With single sign-on configured the web UI signs in through the provider only.
+  if (deps.sso) return err(new IdentityError('sso_only', 'sign in with single sign-on'));
   // The per-IP limiter records failures only (successful logins by many users
   // behind one proxy address must not lock each other out). The check-then-hit
   // gap around the async verify is closed by capping concurrent attempts per
@@ -91,27 +93,38 @@ async function attemptLogin(
   }
 
   const user = await deps.users.findByLogin(loginKey);
+  // A user without a password (created by single sign-on) costs the same as an unknown login.
   const hash = user?.passwordHash ?? (await dummyHash(deps));
   const passwordOk = await deps.hasher.verify(hash, input.password);
-  if (!user || !passwordOk) return credentialsFailed(loginKey);
+  if (!user || user.passwordHash === null || !passwordOk) return credentialsFailed(loginKey);
   if (user.disabled) {
     await audit('disabled', loginKey);
     return err(new IdentityError('disabled', 'account is disabled'));
   }
 
   deps.loginLimiter.reset(loginKey);
+  const session = await startSession(deps, user.id);
+  await deps.audit.record({ actorId: user.id, action: 'auth.login', meta: { ip: input.ip } });
+  return ok(session);
+}
+
+/** A new web session for `userId` (password or SSO sign-in); stamps the user's last login. */
+export async function startSession(
+  deps: IdentityDeps,
+  userId: string,
+): Promise<{ sessionId: string; expiresAt: Date }> {
   const now = deps.clock.now();
   const sessionId = Buffer.from(deps.random.bytes(32)).toString('base64url');
   const expiresAt = new Date(now.getTime() + SESSION_ABSOLUTE_MS);
   await deps.sessions.insert({
     idHash: deps.sha256.hex(sessionId),
-    userId: user.id,
+    userId,
     createdAt: now,
     lastSeenAt: now,
     expiresAt,
   });
-  await deps.audit.record({ actorId: user.id, action: 'auth.login', meta: { ip: input.ip } });
-  return ok({ sessionId, expiresAt });
+  await deps.users.setLastLogin(userId, now);
+  return { sessionId, expiresAt };
 }
 
 export async function logout(deps: IdentityDeps, input: { sessionId: string }): Promise<void> {

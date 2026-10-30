@@ -20,6 +20,28 @@ export function clearSessionCookie(c: Context, secure: boolean): void {
   deleteCookie(c, SESSION_COOKIE, cookieOptions(secure));
 }
 
+const LOGIN_COOKIE = 'sr_login';
+const LOGIN_COOKIE_MAX_AGE_SEC = 600;
+// Lax: the SSO callback is a cross-site top-level redirect from the provider; Strict would drop it.
+const loginCookieOptions = (secure: boolean) =>
+  ({ httpOnly: true, sameSite: 'Lax', path: '/api/auth', secure }) as const;
+
+/** Binds a single sign-on attempt to this browser: the callback must bring the same `state`. */
+export function setLoginBindingCookie(c: Context, state: string, secure: boolean): void {
+  setCookie(c, LOGIN_COOKIE, state, {
+    ...loginCookieOptions(secure),
+    maxAge: LOGIN_COOKIE_MAX_AGE_SEC,
+  });
+}
+
+export function clearLoginBindingCookie(c: Context, secure: boolean): void {
+  deleteCookie(c, LOGIN_COOKIE, loginCookieOptions(secure));
+}
+
+export function loginBindingOf(c: Context): string | null {
+  return getCookie(c, LOGIN_COOKIE) ?? null;
+}
+
 export function sessionIdOf(c: Context): string | null {
   const id = getCookie(c, SESSION_COOKIE);
   return id && id.length <= MAX_SESSION_ID_LENGTH ? id : null;

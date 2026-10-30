@@ -297,6 +297,7 @@ describe('api tokens', () => {
         hashed++;
         return inner.hex(x);
       },
+      base64url: (x) => inner.base64url(x),
       timingSafeEqual: (x, y) => inner.timingSafeEqual(x, y),
     };
     const bad = await Promise.all(

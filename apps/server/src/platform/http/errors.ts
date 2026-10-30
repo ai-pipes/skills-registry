@@ -16,6 +16,8 @@ const STATUS: Record<string, ContentfulStatusCode> = {
   folder_archived: 409,
   not_imported: 409,
   user_exists: 409,
+  sso_managed: 409,
+  sso_linked: 409,
   missing_skill_md: 422,
   name_mismatch: 422,
   duplicate_path: 422,
@@ -26,6 +28,9 @@ const STATUS: Record<string, ContentfulStatusCode> = {
   unauthenticated: 401,
   forbidden: 403,
   csrf: 403,
+  sso_only: 403,
+  not_allowed: 403,
+  idp_unavailable: 503,
   locked: 429,
   rate_limited: 429,
 };

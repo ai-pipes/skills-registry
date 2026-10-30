@@ -13,10 +13,39 @@ export interface Principal {
 export interface User {
   id: string;
   login: string;
-  passwordHash: string;
+  /** Null for people created by single sign-on: they have never had a password. */
+  passwordHash: string | null;
   role: Role;
   disabled: boolean;
   createdAt: Date;
+  /** The identity provider's `sub` this user is linked to; null = not linked. */
+  oidcSub: string | null;
+  email: string | null;
+  /** Provider groups as of the last single sign-on. */
+  groups: string[];
+  /** Last successful web sign-in (password or SSO). */
+  lastLoginAt: Date | null;
+}
+
+/** What the identity provider tells us about a person. */
+export interface OidcClaims {
+  sub: string;
+  preferredUsername: string | null;
+  email: string | null;
+  groups: string[];
+}
+
+/** Provider groups that open the door (`loginGroup`) and that make a person an admin. */
+export interface GroupPolicy {
+  loginGroup: string;
+  adminGroup: string;
+}
+
+/** The role a person with these groups gets, or null when they may not sign in at all. */
+export function accessFor(groups: readonly string[], policy: GroupPolicy): Role | null {
+  if (groups.includes(policy.adminGroup)) return 'admin';
+  if (groups.includes(policy.loginGroup)) return 'member';
+  return null;
 }
 
 export type IdentityErrorCode =
@@ -28,7 +57,20 @@ export type IdentityErrorCode =
   | 'forbidden'
   | 'weak_password'
   | 'user_exists'
-  | 'not_found';
+  | 'not_found'
+  | 'invalid_input'
+  /** Single sign-on: the login attempt is unknown, expired, not from this browser or refused. */
+  | 'invalid_state'
+  /** Single sign-on: the person is in neither the login nor the admin group. */
+  | 'not_allowed'
+  /** Single sign-on: the identity provider cannot be reached right now. */
+  | 'idp_unavailable'
+  /** Password sign-in is off: the web UI signs in with SSO only. */
+  | 'sso_only'
+  /** People and passwords are managed in the identity provider. */
+  | 'sso_managed'
+  /** The provider account is already linked to another user. */
+  | 'sso_linked';
 
 export class IdentityError extends DomainError {
   constructor(

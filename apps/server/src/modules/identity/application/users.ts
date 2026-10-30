@@ -8,10 +8,18 @@ export interface UserSummary {
   role: Role;
   disabled: boolean;
   createdAt: Date;
+  /** Linked to an identity provider account. */
+  sso: boolean;
+  email: string | null;
+  lastLoginAt: Date | null;
 }
 
 const requireAdmin = (p: Principal): IdentityError | null =>
   p.role === 'admin' ? null : new IdentityError('forbidden', 'admin only');
+
+/** With single sign-on configured, people and their passwords live in the identity provider. */
+const ssoManaged = (deps: IdentityDeps): IdentityError | null =>
+  deps.sso ? new IdentityError('sso_managed', 'users are managed in the identity provider') : null;
 
 async function insertUser(
   deps: IdentityDeps,
@@ -49,7 +57,7 @@ export async function createUser(
   deps: IdentityDeps,
   input: { principal: Principal; login: string; password: string; role: Role },
 ): Promise<Result<{ id: string }, IdentityError>> {
-  const denied = requireAdmin(input.principal);
+  const denied = requireAdmin(input.principal) ?? ssoManaged(deps);
   if (denied) return err(denied);
   return insertedUser(await insertUser(deps, input.principal.userId, input));
 }
@@ -76,6 +84,9 @@ export async function listUsers(
       role: u.role,
       disabled: u.disabled,
       createdAt: u.createdAt,
+      sso: u.oidcSub !== null,
+      email: u.email,
+      lastLoginAt: u.lastLoginAt,
     })),
   );
 }
@@ -84,7 +95,7 @@ export async function resetPassword(
   deps: IdentityDeps,
   input: { principal: Principal; userId: string; password: string },
 ): Promise<Result<void, IdentityError>> {
-  const denied = requireAdmin(input.principal);
+  const denied = requireAdmin(input.principal) ?? ssoManaged(deps);
   if (denied) return err(denied);
   const weak = checkPassword(input.password);
   if (weak) return err(weak);
@@ -158,4 +169,52 @@ export async function actAs(
   if (!user) return err(new IdentityError('not_found', `user "${login}" not found`));
   if (user.disabled) return err(new IdentityError('disabled', `user "${login}" is disabled`));
   return ok({ userId: user.id, login: user.login, role: user.role, via: 'cli' });
+}
+
+/**
+ * Operator path: links an existing user to the identity provider account `sub`, so their single
+ * sign-on lands on this user (keeping id, tokens and authorship). Fails if `sub` belongs to
+ * another user; linking the same pair again changes nothing.
+ */
+export async function linkSso(
+  deps: IdentityDeps,
+  input: { login: string; sub: string },
+): Promise<Result<{ changed: boolean }, IdentityError>> {
+  const sub = input.sub.trim();
+  if (sub === '') return err(new IdentityError('invalid_input', 'sub must not be empty'));
+  const user = await deps.users.findByLogin(input.login.trim());
+  if (!user) return err(new IdentityError('not_found', `user "${input.login}" not found`));
+  const owner = await deps.users.findBySub(sub);
+  if (owner && owner.id !== user.id) {
+    return err(new IdentityError('sso_linked', `already linked to user "${owner.login}"`));
+  }
+  const previousSub = user.oidcSub;
+  if (previousSub === sub) return ok({ changed: false });
+  await deps.users.setOidcSub(user.id, sub);
+  await deps.audit.record({
+    actorId: null,
+    action: 'user.link_sso',
+    target: user.id,
+    meta: { login: user.login, sub, previousSub },
+  });
+  return ok({ changed: true });
+}
+
+/** Operator path: removes the link to the identity provider; API tokens keep working. */
+export async function unlinkSso(
+  deps: IdentityDeps,
+  input: { login: string },
+): Promise<Result<{ changed: boolean }, IdentityError>> {
+  const user = await deps.users.findByLogin(input.login.trim());
+  if (!user) return err(new IdentityError('not_found', `user "${input.login}" not found`));
+  const sub = user.oidcSub;
+  if (sub === null) return ok({ changed: false });
+  await deps.users.setOidcSub(user.id, null);
+  await deps.audit.record({
+    actorId: null,
+    action: 'user.unlink_sso',
+    target: user.id,
+    meta: { login: user.login, sub },
+  });
+  return ok({ changed: true });
 }

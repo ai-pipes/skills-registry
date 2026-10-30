@@ -1,5 +1,7 @@
 import type { Sql } from '../../../platform/db.ts';
 import type {
+  PendingLogin,
+  PendingLoginRepository,
   SessionRecord,
   SessionRepository,
   TokenRecord,
@@ -11,10 +13,14 @@ import type { Role, User } from '../domain/user.ts';
 interface UserRow {
   id: string;
   login: string;
-  password_hash: string;
+  password_hash: string | null;
   role: Role;
   disabled: boolean;
   created_at: Date;
+  oidc_sub: string | null;
+  email: string | null;
+  groups: string[];
+  last_login_at: Date | null;
 }
 
 const toUser = (r: UserRow): User => ({
@@ -24,6 +30,10 @@ const toUser = (r: UserRow): User => ({
   role: r.role,
   disabled: r.disabled,
   createdAt: r.created_at,
+  oidcSub: r.oidc_sub,
+  email: r.email,
+  groups: r.groups,
+  lastLoginAt: r.last_login_at,
 });
 
 export class PgUserRepository implements UserRepository {
@@ -101,6 +111,83 @@ export class PgUserRepository implements UserRepository {
     if (!isUuid(id)) return false;
     const r = await this.sql`update identity.users set disabled = ${disabled} where id = ${id}`;
     return r.count > 0;
+  }
+
+  async findBySub(sub: string): Promise<User | null> {
+    const [r] = await this.sql<UserRow[]>`select * from identity.users where oidc_sub = ${sub}`;
+    return r ? toUser(r) : null;
+  }
+
+  async insertSso(u: {
+    login: string;
+    oidcSub: string;
+    email: string | null;
+    groups: string[];
+    role: Role;
+    createdAt: Date;
+  }): Promise<User | null> {
+    // No conflict target: a taken login and a taken sub (concurrent first login) both yield null.
+    const [r] = await this.sql<UserRow[]>`
+      insert into identity.users (login, oidc_sub, email, groups, role, created_at)
+      values (${u.login}, ${u.oidcSub}, ${u.email}, ${u.groups}, ${u.role}, ${u.createdAt})
+      on conflict do nothing returning *`;
+    return r ? toUser(r) : null;
+  }
+
+  async recordSsoLogin(
+    id: string,
+    input: { email: string | null; groups: string[]; role: Role },
+  ): Promise<User> {
+    const [r] = await this.sql<UserRow[]>`
+      update identity.users
+      set email = ${input.email}, groups = ${input.groups}, role = ${input.role}
+      where id = ${id} returning *`;
+    if (!r) throw new Error('user to refresh not found');
+    return toUser(r);
+  }
+
+  async setLastLogin(id: string, at: Date): Promise<void> {
+    await this.sql`update identity.users set last_login_at = ${at} where id = ${id}`;
+  }
+
+  async setOidcSub(id: string, sub: string | null): Promise<boolean> {
+    if (!isUuid(id)) return false;
+    const r = await this.sql`update identity.users set oidc_sub = ${sub} where id = ${id}`;
+    return r.count > 0;
+  }
+}
+
+interface PendingRow {
+  state: string;
+  code_verifier: string;
+  nonce: string;
+  return_to: string;
+  expires_at: Date;
+}
+
+export class PgPendingLoginRepository implements PendingLoginRepository {
+  constructor(private readonly sql: Sql) {}
+
+  async insert(p: PendingLogin): Promise<void> {
+    // Abandoned attempts are dropped here, so the table never needs a separate sweeper.
+    await this.sql`delete from identity.oidc_pending where expires_at < now() - interval '1 hour'`;
+    await this
+      .sql`insert into identity.oidc_pending (state, code_verifier, nonce, return_to, expires_at)
+      values (${p.state}, ${p.codeVerifier}, ${p.nonce}, ${p.returnTo}, ${p.expiresAt})`;
+  }
+
+  async consume(state: string): Promise<PendingLogin | null> {
+    const [r] = await this.sql<PendingRow[]>`
+      delete from identity.oidc_pending where state = ${state} returning *`;
+    return r
+      ? {
+          state: r.state,
+          codeVerifier: r.code_verifier,
+          nonce: r.nonce,
+          returnTo: r.return_to,
+          expiresAt: r.expires_at,
+        }
+      : null;
   }
 }
 
