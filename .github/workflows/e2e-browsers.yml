@@ -19,9 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4 # version from packageManager in package.json
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6 # version from packageManager in package.json
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -31,7 +31,7 @@ jobs:
         env:
           E2E_BROWSERS: chromium,firefox,webkit
       - if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-results-all-browsers
           path: node_modules/.cache/playwright/test-results
