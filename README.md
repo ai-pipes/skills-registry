@@ -1,5 +1,10 @@
 # Skills Registry
 
+[![CI](https://github.com/ai-pipes/skills-registry/actions/workflows/ci.yml/badge.svg)](https://github.com/ai-pipes/skills-registry/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/ai-pipes/skills-registry)](https://github.com/ai-pipes/skills-registry/releases)
+[![npm](https://img.shields.io/npm/v/@isqanderm/skills-registry)](https://www.npmjs.com/package/@isqanderm/skills-registry)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
 A self-hosted skills registry for Claude Code. It stores skills with full version history and serves
 them to the agent over MCP (`search_skills`, `get_skill`, `list_folders`), so a team keeps its
 skills in one place. Skills are grouped into folders:
@@ -24,6 +29,17 @@ cp .env.example .env
 #   ADMIN_PASSWORD    — uncomment and set the first administrator's password (at least 12 characters)
 #   PUBLIC_URL        — the address users reach the server at
 docker compose up -d
+```
+
+`docker compose up` builds the image from source. To run a released image instead
+(`linux/amd64` and `linux/arm64`, tags `X.Y.Z`, `X.Y`, `X`), put a `compose.override.yml` next to
+`docker-compose.yml`:
+
+```yaml
+services:
+  app:
+    image: ghcr.io/ai-pipes/skills-registry:0.1
+    build: !reset null
 ```
 
 Check: `curl http://localhost:3000/healthz` answers `ok`. On first start the server applies
@@ -224,8 +240,13 @@ by meaning. Measurements and the formula are in [ADR 0005](./docs/adr/0005-searc
 
 `skills-registry` is a CLI for the user's machine (Node ≥ 22): it imports skills from public GitHub,
 updates them from upstream and installs them for any agent (Claude Code, Codex, Cursor and others).
-It talks to the server only over REST with an API token. It is not published to npm — build it from
-the repository:
+It talks to the server only over REST with an API token. Install it from npm:
+
+```bash
+npm install -g @isqanderm/skills-registry
+```
+
+Or build it from the repository:
 
 ```bash
 pnpm install && pnpm build:cli

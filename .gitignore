@@ -3,3 +3,5 @@ dist/
 .env
 .superpowers/
 coverage/
+compose.override.yml
+docker-compose.override.yml
