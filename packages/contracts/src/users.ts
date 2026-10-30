@@ -20,5 +20,10 @@ export const UserSummary = z.object({
   role: Role,
   disabled: z.boolean(),
   createdAt: z.iso.datetime(),
+  /** Linked to an identity provider account (signs in with SSO). */
+  sso: z.boolean(),
+  email: z.string().nullable(),
+  /** Last successful web sign-in (password or SSO); null if never. */
+  lastLoginAt: z.iso.datetime().nullable(),
 });
 export type UserSummary = z.infer<typeof UserSummary>;

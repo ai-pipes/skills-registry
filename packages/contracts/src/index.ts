@@ -1,4 +1,13 @@
-export { LoginRequest, MeResponse, Role } from './auth.ts';
+export {
+  AuthConfigResponse,
+  AuthMethod,
+  LoginRequest,
+  MeResponse,
+  Role,
+  SsoCallbackQuery,
+  SsoLoginError,
+  SsoLoginQuery,
+} from './auth.ts';
 export { ErrorBody } from './errors.ts';
 export {
   ArchiveFolderResponse,
