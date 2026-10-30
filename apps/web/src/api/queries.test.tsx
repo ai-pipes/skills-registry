@@ -75,7 +75,16 @@ describe('queries for later sections', () => {
       { id: 't', name: 'dev', prefix: 'sk_ab', createdAt: at, lastUsedAt: null, revokedAt: null },
     ];
     const users: UserSummary[] = [
-      { id: 'u', login: 'admin', role: 'admin', disabled: false, createdAt: at },
+      {
+        id: 'u',
+        login: 'admin',
+        role: 'admin',
+        disabled: false,
+        createdAt: at,
+        sso: true,
+        email: 'admin@example.com',
+        lastLoginAt: null,
+      },
     ];
     server.use(
       http.get('/api/tokens', () => HttpResponse.json(tokens)),

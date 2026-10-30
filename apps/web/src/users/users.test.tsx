@@ -3,31 +3,13 @@ import { CreateUserRequest, SetDisabledRequest, type UserSummary } from '@skills
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vite-plus/test';
 import { routes } from '@/app/routes.tsx';
-import { adminMe, memberMe } from '../../test/fixtures.ts';
-import { errorResponse, server } from '../../test/msw/handlers.ts';
+import { adminMe, adminUser, aliceUser, bobUser, memberMe } from '../../test/fixtures.ts';
+import { authConfigHandler, errorResponse, server } from '../../test/msw/handlers.ts';
 import { renderWithApp } from '../../test/setup.ts';
 
-const admin: UserSummary = {
-  id: '11111111-1111-4111-8111-111111111111',
-  login: 'admin',
-  role: 'admin',
-  disabled: false,
-  createdAt: '2026-10-01T12:00:00.000Z',
-};
-const alice: UserSummary = {
-  id: '22222222-2222-4222-8222-222222222222',
-  login: 'alice',
-  role: 'member',
-  disabled: false,
-  createdAt: '2026-10-02T12:00:00.000Z',
-};
-const bob: UserSummary = {
-  id: '33333333-3333-4333-8333-333333333333',
-  login: 'bob',
-  role: 'member',
-  disabled: true,
-  createdAt: '2026-10-03T12:00:00.000Z',
-};
+const admin = adminUser;
+const alice = aliceUser;
+const bob = bobUser;
 
 type Call = { method: string; path: string; body: unknown };
 
@@ -172,6 +154,44 @@ describe('users page', () => {
     expect(calls).toEqual([
       { method: 'POST', path: `/disable/${alice.id}`, body: { disabled: true } },
       { method: 'POST', path: `/disable/${bob.id}`, body: { disabled: false } },
+    ]);
+  });
+
+  it('shows email, the SSO badge and the last sign-in', async () => {
+    usersApi([admin, alice, bob]);
+    renderWithApp(routes, { route: '/users', me: adminMe });
+    await screen.findByText('alice');
+    expect(rowOf('alice').getByText('alice@example.com')).toBeTruthy();
+    expect(rowOf('alice').getByText('SSO')).toBeTruthy();
+    expect(rowOf('admin').queryByText('SSO')).toBeNull();
+    expect(rowOf('bob').getByText('Never')).toBeTruthy();
+    const last = rowOf('alice')
+      .getAllByRole('time')
+      .find((el) => el.getAttribute('dateTime') === alice.lastLoginAt);
+    expect(last?.getAttribute('title')).toBeTruthy();
+    expect(screen.queryByText(/identity provider/)).toBeNull();
+  });
+
+  it('with SSO there is no "Add" and no "Reset password", and a note explains why', async () => {
+    server.use(authConfigHandler('sso'));
+    const calls = usersApi([admin, alice, bob]);
+    const { user } = renderWithApp(routes, { route: '/users', me: adminMe });
+    await screen.findByText('alice');
+    expect(
+      await screen.findByText(
+        'People are added and their roles managed in the identity provider: membership in the admin and member groups decides who signs in and as what.',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Add' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reset password' })).toBeNull();
+    expect(rowOf('alice').getByText('SSO')).toBeTruthy();
+
+    await user.click(rowOf('alice').getByRole('button', { name: 'Disable' }));
+    const confirm = within(await screen.findByRole('alertdialog'));
+    await user.click(confirm.getByRole('button', { name: 'Disable' }));
+    await waitFor(() => expect(rowOf('alice').getByText('Disabled')).toBeTruthy());
+    expect(calls).toEqual([
+      { method: 'POST', path: `/disable/${alice.id}`, body: { disabled: true } },
     ]);
   });
 

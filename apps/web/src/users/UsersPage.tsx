@@ -5,7 +5,7 @@ import { useId, useState, type ComponentProps, type FormEvent } from 'react';
 import { notify } from '@/lib/notify.ts';
 import { api } from '@/api/client.ts';
 import { isApiError } from '@/api/errors.ts';
-import { queryKeys, useUsers } from '@/api/queries.ts';
+import { queryKeys, useAuthConfig, useUsers } from '@/api/queries.ts';
 import { useAuth } from '@/auth/AuthProvider.tsx';
 import { ConfirmDialog } from '@/components/ConfirmDialog.tsx';
 import { ErrorAlert } from '@/components/ErrorAlert.tsx';
@@ -37,7 +37,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { formatDateTime } from '@/lib/format.ts';
+import { formatDateTime, formatRelative } from '@/lib/format.ts';
 import { strings } from '@/strings.ts';
 
 const t = strings.users;
@@ -319,10 +319,27 @@ function ToggleDisabled({ user, self }: { user: UserSummary; self: boolean }) {
   );
 }
 
-/** `/users` (admins only): accounts, roles, password resets and disabling. */
+function LastLogin({ iso }: { iso: string | null }) {
+  if (iso === null) return <span className="text-muted-foreground">{t.never}</span>;
+  return (
+    <time dateTime={iso} title={formatDateTime(iso)}>
+      {formatRelative(iso)}
+    </time>
+  );
+}
+
+/**
+ * `/users` (admins only): accounts, roles, password resets and disabling. With single sign-on
+ * people and roles come from the identity provider, so there is no "Add" and no password reset.
+ */
 export function UsersPage() {
   const users = useUsers();
   const { me } = useAuth();
+  const config = useAuthConfig();
+  const sso = config.data?.method === 'sso';
+  // Password management only once the method is known (or unknown after an error), so SSO
+  // deployments never flash the "Add" button.
+  const passwords = !sso && !config.isPending;
 
   let body;
   if (users.isError) body = <ErrorAlert error={users.error} />;
@@ -334,8 +351,10 @@ export function UsersPage() {
           <TableRow>
             <TableHead>{t.columns.login}</TableHead>
             <TableHead>{t.columns.role}</TableHead>
+            <TableHead>{t.columns.email}</TableHead>
             <TableHead>{t.columns.status}</TableHead>
             <TableHead>{t.columns.createdAt}</TableHead>
+            <TableHead>{t.columns.lastLogin}</TableHead>
             <TableHead className="text-right">
               <span className="sr-only">{t.columns.actions}</span>
             </TableHead>
@@ -349,8 +368,14 @@ export function UsersPage() {
                 <TableCell className="font-medium">
                   <span>{user.login}</span>
                   {self && <span className="ml-2 text-muted-foreground">({t.you})</span>}
+                  {user.sso && (
+                    <Badge variant="secondary" className="ml-2">
+                      {t.ssoBadge}
+                    </Badge>
+                  )}
                 </TableCell>
                 <TableCell>{t.roles[user.role]}</TableCell>
+                <TableCell className="text-muted-foreground">{user.email ?? ''}</TableCell>
                 <TableCell>
                   <Badge variant={user.disabled ? 'secondary' : 'outline'}>
                     {user.disabled ? t.disabledBadge : t.active}
@@ -360,8 +385,11 @@ export function UsersPage() {
                   <time dateTime={user.createdAt}>{formatDateTime(user.createdAt)}</time>
                 </TableCell>
                 <TableCell>
+                  <LastLogin iso={user.lastLoginAt} />
+                </TableCell>
+                <TableCell>
                   <div className="flex justify-end gap-2">
-                    <ResetPasswordDialog user={user} />
+                    {passwords && <ResetPasswordDialog user={user} />}
                     <ToggleDisabled user={user} self={self} />
                   </div>
                 </TableCell>
@@ -377,8 +405,9 @@ export function UsersPage() {
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">{t.title}</h1>
-        <AddUserDialog />
+        {passwords && <AddUserDialog />}
       </div>
+      {sso && <p className="text-sm text-muted-foreground">{t.ssoNote}</p>}
       {body}
     </div>
   );
