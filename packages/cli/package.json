@@ -1,0 +1,42 @@
+{
+  "name": "@isqanderm/skills-registry",
+  "version": "0.1.0",
+  "description": "Client CLI for a self-hosted skills registry: import skills from GitHub, update them, install them for any agent",
+  "keywords": [
+    "agent-skills",
+    "claude-code",
+    "cli",
+    "registry",
+    "skills"
+  ],
+  "homepage": "https://github.com/ai-pipes/skills-registry#readme",
+  "bugs": {
+    "url": "https://github.com/ai-pipes/skills-registry/issues"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ai-pipes/skills-registry.git",
+    "directory": "packages/cli"
+  },
+  "bin": {
+    "skills-registry": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "scripts": {
+    "build": "vp pack"
+  },
+  "dependencies": {
+    "yaml": "2.9.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@skills/contracts": "workspace:*"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

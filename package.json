@@ -1,0 +1,42 @@
+{
+  "name": "skills-registry",
+  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ai-pipes/skills-registry.git"
+  },
+  "type": "module",
+  "scripts": {
+    "check": "vp check",
+    "build": "vp pack",
+    "build:web": "pnpm --filter @skills/web build",
+    "build:cli": "pnpm --filter @isqanderm/skills-registry build",
+    "dev:web": "pnpm --filter @skills/web dev",
+    "test": "vp test run --project unit --project web --coverage",
+    "test:int": "vp test run --project integration --passWithNoTests",
+    "test:e2e": "bash scripts/e2e-image.sh",
+    "arch": "depcruise apps/server/src apps/web/src packages/cli/src --config .dependency-cruiser.cjs && pnpm no-radix",
+    "no-radix": "node scripts/check-no-radix.mjs",
+    "knip": "knip",
+    "verify": "pnpm check && pnpm arch && pnpm knip && pnpm test && pnpm test:int && pnpm build:web && pnpm build:cli",
+    "prepare": "lefthook install"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
+    "@playwright/test": "1.64.1",
+    "@swc/core": "1.16.20",
+    "@types/node": "22.19.1",
+    "@vitest/coverage-v8": "5.0.5",
+    "dependency-cruiser": "18.7.0",
+    "jsdom": "30.1.3",
+    "knip": "6.43.0",
+    "lefthook": "2.2.2",
+    "typescript": "7.0.2",
+    "vite-plus": "1.4.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.16.0"
+}

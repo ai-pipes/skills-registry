@@ -1,0 +1,11 @@
+pre-commit:
+  jobs:
+    - name: vp check (staged)
+      glob: '*.{ts,tsx,js,mjs,cjs,json,md,yml,yaml}'
+      run: pnpm vp check --fix {staged_files}
+      stage_fixed: true
+
+pre-push:
+  jobs:
+    - name: verify
+      run: pnpm verify

@@ -1,0 +1,34 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/*.mjs", ".dependency-cruiser.resolve.cjs"],
+      "project": ["scripts/**", "*.{ts,cjs,mjs}"],
+      "ignoreDependencies": ["@swc/core"]
+    },
+    "apps/server": {
+      "entry": [
+        "src/shared-kernel/index.ts",
+        "src/modules/*/index.ts",
+        "src/platform/{main,cli}.ts",
+        "src/**/*.test.ts",
+        "test/**/*.test.ts"
+      ],
+      "project": ["src/**/*.ts", "test/**/*.ts", "!test/architecture/fixtures/**"]
+    },
+    "apps/web": {
+      "entry": ["src/components/ui/*.tsx", "src/lib/utils.ts", "src/**/*.test.{ts,tsx}"],
+      "project": ["src/**/*.{ts,tsx,css}", "test/**/*.{ts,tsx}"],
+      "ignoreIssues": {
+        "src/components/ui/**": ["exports", "types"]
+      }
+    },
+    "packages/contracts": {
+      "project": ["src/**/*.ts"]
+    },
+    "packages/cli": {
+      "entry": ["src/main.ts", "src/**/*.test.ts"],
+      "project": ["src/**/*.ts", "test/**/*.ts"]
+    }
+  }
+}

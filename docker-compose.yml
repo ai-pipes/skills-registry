@@ -1,0 +1,37 @@
+# Skills Registry: the app and its Postgres (pgvector). Configuration lives in .env
+# (cp .env.example .env). Postgres is reachable only from the app, never published.
+services:
+  app:
+    build: .
+    init: true
+    restart: unless-stopped
+    env_file: ${ENV_FILE:-.env}
+    environment:
+      # The container always listens on 3000; PORT in .env picks the host port below.
+      PORT: '3000'
+      DATABASE_URL: ${DATABASE_URL:-postgres://skills@db:5432/skills}
+      # Passed separately so a generated password never has to be URL-encoded.
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports:
+      - '${PORT:-3000}:3000'
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: skills
+      POSTGRES_DB: skills
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U skills -d skills']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  pgdata:

@@ -1,0 +1,3 @@
+/** Sent to the client at connect; tells the agent when and how to use the tools. */
+export const SERVER_INSTRUCTIONS =
+  "This server is the user's skill library. Before starting a task that needs specialized knowledge, a project convention, or a repeatable process, call search_skills with a short description of the task. If a result fits, call get_skill with its slug and follow its SKILL.md. Load files listed in get_skill only when SKILL.md tells you to, with get_skill(slug, path). If nothing fits, continue without a skill. Skills are grouped into folders by topic or project. If the task clearly belongs to some of them, call list_folders and pass their slugs to search_skills; otherwise search everything.";

@@ -1,0 +1,14 @@
+packages:
+  - apps/*
+  - packages/*
+allowBuilds:
+  '@swc/core': false
+  cpu-features: false
+  lefthook: true
+  onnxruntime-node: false
+  protobufjs: false
+  ssh2: false
+minimumReleaseAgeExclude:
+  - '@huggingface/transformers@4.3.2'
+  - lucide-react@1.63.0
+  - react-router@8.5.1

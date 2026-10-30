@@ -1,0 +1,75 @@
+# CI: verify (lint, types, architecture, knip, unit + integration tests on Testcontainers),
+# smoke (the docker compose box end to end, including the in-image embedding model) and e2e
+# (Playwright in Chromium against the same built image; all three engines nightly in
+# e2e-browsers.yml).
+#
+# Moving to another CI inside the perimeter: the same two commands on a runner with
+# Node 22, pnpm (version from package.json) and Docker, after `pnpm install --frozen-lockfile`:
+#   pnpm audit --audit-level=high && pnpm verify
+#   bash scripts/smoke.sh
+#   pnpm exec playwright install --with-deps chromium && bash scripts/e2e-image.sh
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4 # version from packageManager in package.json
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm audit --audit-level=high
+      # Docker is available on ubuntu runners, so the Testcontainers integration tests run.
+      - run: pnpm verify
+
+  smoke:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      # scripts/smoke-mcp.mjs uses the MCP client from the root devDependencies.
+      - run: pnpm install --frozen-lockfile
+      - run: bash scripts/smoke.sh
+
+  e2e:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: bash scripts/e2e-image.sh
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: node_modules/.cache/playwright/test-results
+          retention-days: 7

@@ -1,0 +1,38 @@
+# Nightly (and on demand): the Playwright e2e suite in Chromium, Firefox and WebKit against the
+# built image. The per-push `e2e` job in ci.yml runs Chromium only.
+name: e2e-browsers
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-browsers-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4 # version from packageManager in package.json
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium firefox webkit
+      - run: bash scripts/e2e-image.sh
+        env:
+          E2E_BROWSERS: chromium,firefox,webkit
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results-all-browsers
+          path: node_modules/.cache/playwright/test-results
+          retention-days: 7
