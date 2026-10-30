@@ -1,5 +1,7 @@
 # Client CLI: import from GitHub, update, install — design
 
+> **Historical design document.** Written while the project was a private tool for one team, before it was open-sourced; "the owner" is the original author. Statements of scope (e.g. open source as a non-goal) and deployment details reflect that time. Current behaviour is described in the README and `docs/adr/`.
+
 Date: 2026-10-29
 Status: draft for review
 Based on: `docs/superpowers/specs/2026-10-28-skills-service-design.md` (hereafter "the main spec"), `docs/superpowers/specs/2026-10-29-skill-folders-design.md` (hereafter "the folders spec").

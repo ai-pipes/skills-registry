@@ -1,5 +1,7 @@
 # Self-hosted skills registry with MCP access — design
 
+> **Historical design document.** Written while the project was a private tool for one team, before it was open-sourced; "the owner" is the original author. Statements of scope (e.g. open source as a non-goal) and deployment details reflect that time. Current behaviour is described in the README and `docs/adr/`.
+
 Date: 2026-10-28
 Status: draft for review
 

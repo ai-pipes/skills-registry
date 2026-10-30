@@ -2,7 +2,7 @@
 
 ## Context
 
-The web UI signs in only with a login and password stored in `identity.users` (`password_hash`). Administrators create users and reset passwords by hand, in the UI or with the server CLI. Teams that already run an identity provider want one account and central off-boarding instead of another password. The owner runs Pocket ID; the sibling project `mcp-registry` is OIDC-only and already has a working Authorization Code + PKCE flow with groups-based access (`apps/server/src/modules/identity`, `apps/web/src/auth/LoginPage.tsx`).
+The web UI signs in only with a login and password stored in `identity.users` (`password_hash`). Administrators create users and reset passwords by hand, in the UI or with the server CLI. Teams that already run an identity provider want one account and central off-boarding instead of another password. The sibling project `mcp-registry` is OIDC-only and already has a working Authorization Code + PKCE flow with groups-based access (`apps/server/src/modules/identity`, `apps/web/src/auth/LoginPage.tsx`).
 
 At the same time this registry is self-hosted by small teams, many of which have no provider. Existing installations have password users whose `sk_…` tokens are configured in agents and in the client CLI ([ADR 0008](./0008-bearer-rest.md)); turning SSO on must not break them.
 
