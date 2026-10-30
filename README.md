@@ -54,11 +54,124 @@ icons and styles are bundled.
   (Ctrl+C). Revoking asks for confirmation.
 - **Users** (administrators only) — add (password at least 12 characters, role),
   reset a password, disable or enable. A disabled user cannot sign in, their sessions
-  are ended and their tokens are revoked. You cannot disable yourself.
+  are ended and their tokens are revoked. You cannot disable yourself. With SSO, people are
+  added and their passwords managed in the identity provider — see
+  [Single sign-on](#single-sign-on-oidc).
 
 If sign-in does not stick (after signing in you are back on the sign-in page), the server requires
 HTTPS for the session cookie: open the service over `https://` or set `COOKIE_SECURE=false` on an
 internal network.
+
+## Single sign-on (OIDC)
+
+SSO is optional. Without OIDC settings the server works as described above: users sign in to the
+web UI with a login and password. When `OIDC_ISSUER`, `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET` are
+all set, the web UI signs in **only** through the identity provider (IdP). Setting some but not all
+three is a configuration error: the server reports it and exits.
+
+What changes in SSO mode:
+
+- The sign-in page shows a single "Sign in with SSO" button; the password form is gone
+  (`POST /api/auth/login` answers `403 sso_only`).
+- API tokens (`sk_…`) on `/mcp` and `/api` keep working for every user, including password users
+  created before SSO was turned on. Their agents and the client CLI need no changes.
+- People are managed in the IdP: the "Users" page has no "New user" and no "Reset password"
+  (`POST /api/users` and password resets answer `409 sso_managed`). Disabling and enabling users,
+  tokens and sign-out work as before; disabling still ends sessions and revokes tokens.
+- Access and role come from the person's IdP groups: a member of `OIDC_ADMIN_GROUP` is an `admin`,
+  a member of `OIDC_LOGIN_GROUP` is a `member`, anyone else is refused. The role is re-synced on
+  every SSO sign-in.
+- The first SSO sign-in of an unknown person creates a user. Its login is taken from
+  `preferred_username`, else the local part of the email, else the IdP subject (`sub`), adjusted to
+  the login rules (`-2`, `-3`… on collision). The login is not changed on later sign-ins.
+- `ADMIN_LOGIN`/`ADMIN_PASSWORD` are ignored (with a warning in the log). The first administrator is
+  whoever signs in as a member of `OIDC_ADMIN_GROUP`.
+
+### Provider setup
+
+Any OIDC provider works if it can put the person's groups (or roles) into one claim of the ID token
+or the UserInfo response: a list of names, or an object whose keys are the names. If the ID token
+has no such claim, the server asks UserInfo.
+
+1. Create two groups: the login group (`skills-users`) and the admin group (`skills-admins`).
+   Membership in either lets a person in; the admin group also makes them an admin.
+2. Create a confidential OIDC client (Authorization Code with a client secret):
+   - redirect URI: `<PUBLIC_URL>/api/auth/sso/callback`, e.g.
+     `https://skills.example.com/api/auth/sso/callback`;
+   - PKCE allowed (the server always sends S256);
+   - the groups claim is emitted (see the table below).
+3. Put the issuer, client ID and secret into `.env` and restart: `docker compose up -d`.
+
+| Provider                               | Settings                                                                                                                                                              |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pocket ID, Authentik, Authelia, Kanidm | defaults                                                                                                                                                              |
+| Keycloak                               | defaults; add a client scope `groups` with a Group Membership mapper (token claim name `groups`, "Full group path" off) and assign it to the client                   |
+| Zitadel                                | `OIDC_SCOPES=openid profile email urn:zitadel:iam:org:projects:roles`, `OIDC_GROUPS_CLAIM=urn:zitadel:iam:org:project:roles`; use project roles named like the groups |
+
+These are starting points, not tested recipes: check the claims your provider actually issues (for
+example on its token preview page).
+
+| Variable             | Default                       | Meaning                                                                                                          |
+| -------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `OIDC_ISSUER`        | unset                         | issuer URL; discovery at `<OIDC_ISSUER>/.well-known/openid-configuration` happens on the first sign-in           |
+| `OIDC_CLIENT_ID`     | unset                         | client ID of the confidential client                                                                             |
+| `OIDC_CLIENT_SECRET` | unset                         | client secret                                                                                                    |
+| `OIDC_LOGIN_GROUP`   | `skills-users`                | members of this group may sign in (as `member`)                                                                  |
+| `OIDC_ADMIN_GROUP`   | `skills-admins`               | members of this group may sign in and are admins                                                                 |
+| `OIDC_SCOPES`        | `openid profile email groups` | scopes of the sign-in request, space- or comma-separated; must include `openid`                                  |
+| `OIDC_GROUPS_CLAIM`  | `groups`                      | claim with the person's groups (ID token, else UserInfo): a list of names, or an object whose keys are the names |
+
+`OIDC_ISSUER` must be exactly the `issuer` value from the discovery document (mind the trailing
+slash): the server checks it on every sign-in. Check it with
+`curl -s https://id.example.com/.well-known/openid-configuration`.
+
+### Linking an existing account
+
+The server never matches IdP accounts to existing users by name or email. A password user who
+signs in through SSO for the first time gets a **new, separate** user. To keep one account (its
+skill authorship and tokens), the operator links the IdP subject to the existing user:
+
+```bash
+docker compose exec app node dist/cli.js link-sso alice <sub>
+```
+
+`<sub>` is the person's subject identifier at the IdP. It is shown on the user's page in most
+providers (Pocket ID, Authentik, Keycloak: the user ID). If the person has already signed in through
+SSO, the subject is stored on the separate user that sign-in created:
+
+```bash
+docker compose exec db psql -U skills -d skills -c \
+  "select login, oidc_sub, email, last_login_at from identity.users where oidc_sub is not null"
+```
+
+(The sign-in itself is in the audit log: `platform.audit_log`, action `auth.login`,
+`meta.method = 'sso'`, `actor_id` is that user.)
+
+A subject can be linked to only one user, so release it from the separate user first, link it,
+then disable the separate user on the "Users" page:
+
+```bash
+docker compose exec app node dist/cli.js unlink-sso alice-2
+docker compose exec app node dist/cli.js link-sso alice <sub>
+```
+
+From then on SSO sign-ins with that subject land on `alice`, and her role follows her IdP groups.
+`link-sso` with the same pair again is a no-op; `unlink-sso <login>` removes the link (the next SSO
+sign-in with that subject creates a new user again).
+
+### Troubleshooting
+
+A failed SSO sign-in returns to `/login?loginError=<code>`, and the page explains it:
+
+| Code              | Meaning                                                                                                                              |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `idp_unavailable` | the server cannot reach `OIDC_ISSUER` (or discovery fails). `/mcp` and API tokens keep working; check the URL and the network        |
+| `not_allowed`     | the person is in neither `OIDC_LOGIN_GROUP` nor `OIDC_ADMIN_GROUP`, or the groups claim is missing: check `OIDC_GROUPS_CLAIM`/scopes |
+| `disabled`        | the user is disabled in the registry; enable them on the "Users" page                                                                |
+| `invalid_state`   | the sign-in attempt expired (10 minutes) or was started in another browser; start again from the sign-in page                        |
+| `internal`        | anything else (for example the code exchange or the issuer check failed); the reason is in the server log                            |
+
+Failed attempts are also recorded in the audit log as `auth.login_failed` with `meta.reason`.
 
 ## Connecting Claude Code
 

@@ -34,6 +34,8 @@ Layout: `apps/server/src/modules/{catalog,search,identity}/{domain,application,i
 - **Principal** — an authenticated subject (a user or a token owner), the result of checking a token/session.
 - **ApiToken** — an `sk_…` token; only its SHA-256 is stored in the DB; has `lastUsedAt`/`revokedAt`.
 - **Outbox** — a table of events written in the same transaction as the change; a worker delivers them to subscribers (Search).
+- **Sign-in method** — `password` or `sso`, chosen by configuration: all of `OIDC_ISSUER`/`OIDC_CLIENT_ID`/`OIDC_CLIENT_SECRET` set → the web UI signs in only via OIDC (`GET /api/auth/config`); API tokens work in both modes (ADR 0009).
+- **`oidc_sub`** — the provider's subject on a user (unique, null = not linked). A first SSO sign-in with an unknown `sub` creates a user; an existing user is linked only explicitly with the server CLI `link-sso <login> <sub>` / `unlink-sso <login>`, never by name or email. Role is re-synced from groups on every SSO sign-in.
 
 ## How to add a use case
 
