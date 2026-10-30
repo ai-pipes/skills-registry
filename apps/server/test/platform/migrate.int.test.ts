@@ -162,19 +162,26 @@ describe('migrate', () => {
       await sql`insert into identity.users (login, password_hash, role) values ('root', 'h', 'admin')`;
       expect(await migrate(sql, migrationsDir)).toEqual(['0010_identity_sso.sql']);
       const [row] = await sql`
-        select password_hash, oidc_sub, email, groups, last_login_at from identity.users`;
+        select password_hash, oidc_iss, oidc_sub, email, groups, last_login_at
+        from identity.users`;
       expect({ ...row }).toEqual({
         password_hash: 'h',
+        oidc_iss: null,
         oidc_sub: null,
         email: null,
         groups: [],
         last_login_at: null,
       });
-      // SSO users have no password; a provider account links to at most one user.
-      await sql`insert into identity.users (login, role, oidc_sub) values ('anna', 'member', 's1')`;
-      await expect(
-        sql`insert into identity.users (login, role, oidc_sub) values ('anna2', 'member', 's1')`,
-      ).rejects.toThrow(/unique/);
+      // SSO users have no password; a provider account (issuer + sub) links to at most one user,
+      // the same sub at another issuer is another account, and iss/sub are set together.
+      const add = (login: string, iss: string | null, sub: string | null) =>
+        sql`insert into identity.users (login, role, oidc_iss, oidc_sub)
+          values (${login}, 'member', ${iss}, ${sub})`;
+      await add('anna', 'https://a', 's1');
+      await add('anna-b', 'https://b', 's1');
+      await expect(add('anna2', 'https://a', 's1')).rejects.toThrow(/unique/);
+      await expect(add('half', 'https://a', null)).rejects.toThrow(/check/);
+      await expect(add('half2', null, 's2')).rejects.toThrow(/check/);
     } finally {
       await sql.end();
     }

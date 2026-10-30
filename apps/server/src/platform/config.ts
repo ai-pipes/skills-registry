@@ -52,10 +52,24 @@ const schema = z.object({
   OIDC_ADMIN_GROUP: z.string().min(1).default('skills-admins'),
   OIDC_SCOPES: oidcScopes,
   OIDC_GROUPS_CLAIM: z.string().min(1).default(DEFAULT_GROUPS_CLAIM),
+  // Plain-http issuer (private network, tests): tokens and the client secret travel unencrypted.
+  OIDC_ALLOW_INSECURE: bool(false),
 });
 
 /** Partial OIDC settings are a mistake, not "SSO off": name each missing variable. */
 const checkedSchema = schema.superRefine((e, ctx) => {
+  if (
+    e.OIDC_ISSUER !== undefined &&
+    URL.canParse(e.OIDC_ISSUER) &&
+    new URL(e.OIDC_ISSUER).protocol !== 'https:' &&
+    !e.OIDC_ALLOW_INSECURE
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['OIDC_ISSUER'],
+      message: 'must be an https: URL (set OIDC_ALLOW_INSECURE=true to allow http:)',
+    });
+  }
   const missing = OIDC_REQUIRED.filter((k) => e[k] === undefined);
   if (missing.length === 0 || missing.length === OIDC_REQUIRED.length) return;
   for (const key of missing) {
@@ -89,6 +103,8 @@ interface OidcConfig {
   scopes: string;
   /** ID token / UserInfo claim holding the person's groups. */
   groupsClaim: string;
+  /** A plain `http:` issuer is allowed (OIDC_ALLOW_INSECURE). */
+  allowInsecure: boolean;
 }
 
 export interface Config {
@@ -163,6 +179,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
       adminGroup: e.OIDC_ADMIN_GROUP,
       scopes: e.OIDC_SCOPES,
       groupsClaim: e.OIDC_GROUPS_CLAIM,
+      allowInsecure: e.OIDC_ALLOW_INSECURE,
     };
   }
   return config;

@@ -20,6 +20,8 @@ describe('normalizeReturnTo', () => {
     ['skills', '/'],
     ['/a\r\nb', '/'],
     ['/a\u007fb', '/'],
+    [`/${'a'.repeat(511)}`, `/${'a'.repeat(511)}`],
+    [`/${'a'.repeat(512)}`, '/'],
   ])('%j → %j', (input, expected) => {
     expect(normalizeReturnTo(input)).toBe(expected);
   });
@@ -35,33 +37,52 @@ describe('login state lifetime', () => {
   });
 });
 
-const claims = (preferredUsername: string | null, email: string | null, sub = 'sub-1') => ({
-  sub,
-  preferredUsername,
-  email,
-});
+const claims = (
+  preferredUsername: string | null,
+  email: string | null,
+  sub = 'sub-1',
+  emailVerified = true,
+) => ({ sub, preferredUsername, email, emailVerified });
 
 describe('loginBase', () => {
   it('prefers preferred_username, lower-cased', () => {
     expect(loginBase(claims('Anna.K', 'x@example.com'))).toBe('anna.k');
   });
-  it('falls back to the email local part', () => {
+  it('falls back to the local part of a verified email', () => {
     expect(loginBase(claims(null, 'Boris@Example.com'))).toBe('boris');
     expect(loginBase(claims('   ', 'boris@example.com'))).toBe('boris');
+  });
+  it('never uses an unverified email', () => {
+    expect(loginBase(claims(null, 'admin@example.com', 'sub-9', false))).toBe('sub-9');
   });
   it('falls back to sub when neither is usable', () => {
     expect(loginBase(claims(null, '@example.com', 'ABC-123'))).toBe('abc-123');
     expect(loginBase(claims(null, 'no-at-sign', 'abc'))).toBe('abc');
   });
-  it('replaces whitespace and control characters, trims separators', () => {
+  it('reduces to [a-z0-9._-]: whitespace, controls and symbols become one dash', () => {
     expect(loginBase(claims(' Anna  Maria\t\n', null))).toBe('anna-maria');
     expect(loginBase(claims('a\u0000b\u007f', null))).toBe('a-b');
+    expect(loginBase(claims("o'brien+ops@x", null))).toBe('o-brien-ops-x');
+    expect(loginBase(claims('--.a--b.--', null))).toBe('a-b');
   });
-  it('keeps within the length limit', () => {
+  it('turns zero-width and format characters into dashes and maps compatibility forms (NFKC)', () => {
+    expect(loginBase(claims('ad\u200bmin', null))).toBe('ad-min');
+    expect(loginBase(claims('\u200badmin\u2060', null))).toBe('admin');
+    expect(loginBase(claims('ＡＤＭＩＮ', null))).toBe('admin');
+    expect(loginBase(claims('ﬁle', null))).toBe('file');
+  });
+  it('turns non-ASCII look-alikes into dashes instead of keeping them', () => {
+    // Cyrillic "а" and "е" look like Latin a/e
+    expect(loginBase(claims('\u0430dmin', null))).toBe('dmin');
+    expect(loginBase(claims('\u0430\u0435', null, 'sub-7'))).toBe('sub-7');
+  });
+  it('keeps within the length limit, without a trailing separator', () => {
     expect(loginBase(claims('a'.repeat(300), null))).toHaveLength(MAX_LOGIN_LENGTH);
+    expect(loginBase(claims(`${'a'.repeat(127)}-b`, null))).toBe('a'.repeat(127));
   });
-  it('has a last resort for a blank sub', () => {
+  it('has a last resort when nothing is usable', () => {
     expect(loginBase(claims(null, null, ' '))).toBe('user');
+    expect(loginBase(claims('\u200b', null, '\u0430'))).toBe('user');
   });
 });
 

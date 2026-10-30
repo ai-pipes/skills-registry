@@ -18,7 +18,8 @@ export interface User {
   role: Role;
   disabled: boolean;
   createdAt: Date;
-  /** The identity provider's `sub` this user is linked to; null = not linked. */
+  /** Issuer and `sub` of the provider account this user is linked to; both null = not linked. */
+  oidcIss: string | null;
   oidcSub: string | null;
   email: string | null;
   /** Provider groups as of the last single sign-on. */
@@ -32,6 +33,8 @@ export interface OidcClaims {
   sub: string;
   preferredUsername: string | null;
   email: string | null;
+  /** The provider vouches for `email` (`email_verified: true`). */
+  emailVerified: boolean;
   groups: string[];
 }
 

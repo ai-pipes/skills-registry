@@ -87,7 +87,16 @@ describe('single sign-on mode', () => {
 
 describe('linkSso / unlinkSso (operator)', () => {
   beforeEach(() => {
+    env = makeEnv({ sso: true });
+  });
+
+  it('linkSso needs single sign-on to be configured (it stores the issuer)', async () => {
     env = makeEnv();
+    await seedUser(env, 'bob');
+    expect(await linkSso(env.deps, { login: 'bob', sub: 's' })).toMatchObject({
+      ok: false,
+      error: { code: 'invalid_input' },
+    });
   });
 
   it('links, is idempotent for the same pair, and audits once', async () => {
@@ -96,7 +105,7 @@ describe('linkSso / unlinkSso (operator)', () => {
       ok: true,
       value: { changed: true },
     });
-    expect(bob.oidcSub).toBe('sub-b');
+    expect(bob).toMatchObject({ oidcIss: 'https://idp.example', oidcSub: 'sub-b' });
     expect(await linkSso(env.deps, { login: 'bob', sub: 'sub-b' })).toEqual({
       ok: true,
       value: { changed: false },
@@ -106,7 +115,13 @@ describe('linkSso / unlinkSso (operator)', () => {
         actorId: null,
         action: 'user.link_sso',
         target: bob.id,
-        meta: { login: 'bob', sub: 'sub-b', previousSub: null },
+        meta: {
+          login: 'bob',
+          iss: 'https://idp.example',
+          sub: 'sub-b',
+          previousIss: null,
+          previousSub: null,
+        },
       },
     ]);
     const list = await listUsers(env.deps, {
@@ -148,11 +163,11 @@ describe('linkSso / unlinkSso (operator)', () => {
       ok: true,
       value: { changed: true },
     });
-    expect(bob.oidcSub).toBeNull();
+    expect(bob).toMatchObject({ oidcIss: null, oidcSub: null });
     expect(env.audit.at(-1)).toMatchObject({
       action: 'user.unlink_sso',
       target: bob.id,
-      meta: { login: 'bob', sub: 'sub-b' },
+      meta: { login: 'bob', iss: 'https://idp.example', sub: 'sub-b' },
     });
     expect(await unlinkSso(env.deps, { login: 'bob' })).toEqual({
       ok: true,

@@ -23,14 +23,26 @@ const isIdpUnavailable = (error: unknown): error is IdentityError =>
 
 /**
  * Begins Authorization Code + PKCE: returns the provider URL (its `state` binds the attempt) and
- * remembers the attempt. `idp_unavailable` when the provider cannot be reached (nothing is
- * remembered then).
+ * remembers the attempt. `idp_unavailable` when the provider cannot be reached, `rate_limited`
+ * when this IP started too many attempts (nothing is remembered then).
  */
 export async function startSsoLogin(
   deps: IdentityDeps,
-  input: { returnTo: string },
+  input: { returnTo: string; ip: string },
 ): Promise<Result<{ url: URL; state: string }, IdentityError>> {
   if (!deps.sso) return err(notConfigured());
+  // Every start stores a pending attempt for anyone, without a session: bounded per IP.
+  const limit = deps.ssoStartLimiter.hit(input.ip);
+  if (!limit.allowed) {
+    if (deps.auditThrottle.shouldRecord(`sso_rate_limited:${input.ip}`, deps.clock.now())) {
+      await deps.audit.record({
+        actorId: null,
+        action: 'auth.login_failed',
+        meta: { reason: 'rate_limited', method: 'sso', ip: input.ip },
+      });
+    }
+    return err(new IdentityError('rate_limited', 'too many sign-in attempts', limit.retryAfterSec));
+  }
   const state = randomToken(deps);
   const nonce = randomToken(deps);
   const codeVerifier = randomToken(deps);
@@ -91,13 +103,18 @@ export async function completeSsoLogin(
     return err(new IdentityError('invalid_state', 'the identity provider rejected the login'));
   }
 
+  const existing = await deps.users.findBySubject({ iss: sso.issuer, sub: claims.sub });
   const role = accessFor(claims.groups, sso.policy);
   if (!role) {
-    await failed('not_allowed', null, { sub: claims.sub });
+    // Left the groups: their web sessions end now. API tokens stay (ADR 0009, decision 5).
+    if (existing) await deps.sessions.deleteByUser(existing.id);
+    await failed('not_allowed', existing?.id ?? null, {
+      sub: claims.sub,
+      ...(existing ? { sessionsRevoked: true } : {}),
+    });
     return err(new IdentityError('not_allowed', 'your account is not in an allowed group'));
   }
 
-  const existing = await deps.users.findBySub(claims.sub);
   if (existing?.disabled) {
     await failed('disabled', existing.id);
     return err(new IdentityError('disabled', 'account is disabled'));
@@ -105,7 +122,7 @@ export async function completeSsoLogin(
 
   const user = existing
     ? await refreshUser(deps, existing, claims, role)
-    : await createSsoUser(deps, claims, role);
+    : await createSsoUser(deps, sso.issuer, claims, role);
   if (user.disabled) {
     // Only reachable when a concurrent first login created the person and they were disabled.
     await failed('disabled', user.id);
@@ -146,10 +163,12 @@ async function refreshUser(
 /** A first login: a new user with a unique login (`base`, `base-2`, …) derived from the claims. */
 async function createSsoUser(
   deps: IdentityDeps,
+  issuer: string,
   claims: OidcClaims,
   role: Role,
   attempt = 1,
 ): Promise<User> {
+  const subject = { iss: issuer, sub: claims.sub };
   const base = loginBase(claims);
   if (attempt > MAX_LOGIN_ATTEMPTS) {
     throw new Error(`no free login for "${base}" after ${MAX_LOGIN_ATTEMPTS} attempts`);
@@ -157,7 +176,7 @@ async function createSsoUser(
   const login = loginCandidate(base, attempt);
   const user = await deps.users.insertSso({
     login,
-    oidcSub: claims.sub,
+    subject,
     email: claims.email,
     groups: claims.groups,
     role,
@@ -173,7 +192,7 @@ async function createSsoUser(
     return user;
   }
   // The same person signing in twice at once: the other request created them.
-  const raced = await deps.users.findBySub(claims.sub);
+  const raced = await deps.users.findBySubject(subject);
   if (raced) return refreshUser(deps, raced, claims, role);
-  return createSsoUser(deps, claims, role, attempt + 1);
+  return createSsoUser(deps, issuer, claims, role, attempt + 1);
 }

@@ -172,30 +172,43 @@ export async function actAs(
 }
 
 /**
- * Operator path: links an existing user to the identity provider account `sub`, so their single
- * sign-on lands on this user (keeping id, tokens and authorship). Fails if `sub` belongs to
- * another user; linking the same pair again changes nothing.
+ * Operator path: links an existing user to the account `sub` at the configured provider
+ * (`OIDC_ISSUER`), so their single sign-on lands on this user (keeping id, tokens and
+ * authorship). Fails if that account belongs to another user; linking the same pair again
+ * changes nothing.
  */
 export async function linkSso(
   deps: IdentityDeps,
   input: { login: string; sub: string },
 ): Promise<Result<{ changed: boolean }, IdentityError>> {
+  if (!deps.sso) {
+    return err(
+      new IdentityError('invalid_input', 'single sign-on is not configured (OIDC_ISSUER)'),
+    );
+  }
   const sub = input.sub.trim();
   if (sub === '') return err(new IdentityError('invalid_input', 'sub must not be empty'));
   const user = await deps.users.findByLogin(input.login.trim());
   if (!user) return err(new IdentityError('not_found', `user "${input.login}" not found`));
-  const owner = await deps.users.findBySub(sub);
+  const subject = { iss: deps.sso.issuer, sub };
+  const owner = await deps.users.findBySubject(subject);
   if (owner && owner.id !== user.id) {
     return err(new IdentityError('sso_linked', `already linked to user "${owner.login}"`));
   }
-  const previousSub = user.oidcSub;
-  if (previousSub === sub) return ok({ changed: false });
-  await deps.users.setOidcSub(user.id, sub);
+  const previous = { iss: user.oidcIss, sub: user.oidcSub };
+  if (previous.iss === subject.iss && previous.sub === subject.sub) return ok({ changed: false });
+  await deps.users.setOidcSubject(user.id, subject);
   await deps.audit.record({
     actorId: null,
     action: 'user.link_sso',
     target: user.id,
-    meta: { login: user.login, sub, previousSub },
+    meta: {
+      login: user.login,
+      iss: subject.iss,
+      sub,
+      previousIss: previous.iss,
+      previousSub: previous.sub,
+    },
   });
   return ok({ changed: true });
 }
@@ -207,14 +220,14 @@ export async function unlinkSso(
 ): Promise<Result<{ changed: boolean }, IdentityError>> {
   const user = await deps.users.findByLogin(input.login.trim());
   if (!user) return err(new IdentityError('not_found', `user "${input.login}" not found`));
-  const sub = user.oidcSub;
+  const { oidcIss: iss, oidcSub: sub } = user;
   if (sub === null) return ok({ changed: false });
-  await deps.users.setOidcSub(user.id, null);
+  await deps.users.setOidcSubject(user.id, null);
   await deps.audit.record({
     actorId: null,
     action: 'user.unlink_sso',
     target: user.id,
-    meta: { login: user.login, sub },
+    meta: { login: user.login, iss, sub },
   });
   return ok({ changed: true });
 }
