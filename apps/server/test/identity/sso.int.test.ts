@@ -45,6 +45,8 @@ function configFor(overrides: Partial<Config> = {}): Config {
       adminGroup: 'skills-admins',
       scopes: 'openid profile email groups',
       groupsClaim: 'groups',
+      // The fake provider listens on plain http.
+      allowInsecure: true,
     },
     ...overrides,
   };
@@ -58,6 +60,7 @@ function providerFor(config: Config): OpenidProvider {
     clientId: oidc.clientId,
     clientSecret: oidc.clientSecret,
     redirectUri: ssoRedirectUri(config.publicUrl),
+    allowInsecure: oidc.allowInsecure,
     logger: { warn: (fields, msg) => warnings.push({ fields, msg }) },
   });
 }
@@ -166,6 +169,7 @@ const anna: FakeClaims = {
   sub: 'sub-anna',
   preferred_username: 'Anna',
   email: 'anna@example.com',
+  email_verified: true,
   groups: ['skills-users'],
 };
 
@@ -241,8 +245,14 @@ describe('single sign-on through the fake provider', () => {
   it('derives unique logins for new people', async () => {
     await provisionUser(container.identity, { login: 'anna', password: PW, role: 'member' });
     await signedIn(anna);
-    await signedIn({ sub: 'other', email: 'Anna@corp.example', groups: ['skills-users'] });
-    await signedIn({ sub: 'Zed-Sub', groups: ['skills-users'] });
+    await signedIn({
+      sub: 'other',
+      email: 'Anna@corp.example',
+      email_verified: true,
+      groups: ['skills-users'],
+    });
+    // An unverified email never names the account.
+    await signedIn({ sub: 'Zed-Sub', email: 'root@corp.example', groups: ['skills-users'] });
     const logins = (
       await pg.sql<{ login: string }[]>`
       select login from identity.users order by created_at, login`
@@ -420,14 +430,99 @@ describe('an identity provider that is down', () => {
     expect(failed).toHaveLength(0);
   });
 
-  it('an OAuth error answer stays a rejected login', async () => {
+  it('an OAuth error answer stays a rejected login, logged with its OAuth code only', async () => {
     idp.tokenStatus = 400;
+    let code = '';
     try {
-      const { callback } = await signIn(anna);
-      expect(callback.headers.get('location')).toBe('/login?loginError=invalid_state');
+      const attempt = await signIn(anna);
+      code = attempt.code;
+      expect(attempt.callback.headers.get('location')).toBe('/login?loginError=invalid_state');
     } finally {
       idp.tokenStatus = null;
     }
+    const rejected = warnings.filter((w) => w.msg === 'oidc code exchange rejected');
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]?.fields).toMatchObject({ code: expect.any(String) });
+    expect(JSON.stringify(warnings)).not.toContain(code);
+  });
+
+  it('a wrong client secret is logged as invalid_grant', async () => {
+    const config = configFor();
+    const oidc = config.oidc;
+    if (!oidc) throw new Error('no oidc');
+    const wrong = makeApp({ oidc: { ...oidc, clientSecret: 'wrong' } }).app;
+    const { callback } = await signIn(anna, '/skills', wrong);
+    expect(callback.headers.get('location')).toBe('/login?loginError=invalid_state');
+    expect(warnings.find((w) => w.msg === 'oidc code exchange rejected')?.fields).toMatchObject({
+      oauthError: 'invalid_grant',
+    });
+    expect(JSON.stringify(warnings)).not.toContain('wrong');
+  });
+});
+
+describe('hardening', () => {
+  it('rate-limits starts per IP with a redirect the login page explains', async () => {
+    const starts = await Promise.all(
+      Array.from({ length: 31 }, async () => app.request('/api/auth/sso/login')),
+    );
+    const locations = starts.map((r) => r.headers.get('location') ?? '');
+    expect(locations.filter((l) => l.startsWith(idp.issuer))).toHaveLength(30);
+    expect(locations.filter((l) => l === '/login?loginError=rate_limited')).toHaveLength(1);
+    const [n] = await pg.sql<{ n: number }[]>`select count(*)::int as n from identity.oidc_pending`;
+    expect(n?.n).toBe(30);
+  });
+
+  it('drops expired pending attempts at once and never stores an over-long returnTo', async () => {
+    await pg.sql`insert into identity.oidc_pending (state, code_verifier, nonce, return_to, expires_at)
+      values ('just-expired', 'v', 'n', '/', now() - interval '1 second')`;
+    await app.request(`/api/auth/sso/login?returnTo=/${'a'.repeat(600)}`);
+    const rows = await pg.sql<{ state: string; return_to: string }[]>`
+      select state, return_to from identity.oidc_pending`;
+    expect(rows.map((r) => r.state)).not.toContain('just-expired');
+    expect(rows.map((r) => r.return_to)).toEqual(['/']);
+  });
+
+  it('the same sub at another issuer does not land on the old account', async () => {
+    await signedIn({ ...anna, groups: ['skills-admins'] });
+    // As if OIDC_ISSUER had pointed elsewhere when this account was created.
+    await pg.sql`update identity.users set oidc_iss = 'https://old-idp.example'`;
+    const cookie = await signedIn(anna);
+    expect(
+      MeResponse.parse(await (await app.request('/api/auth/me', { headers: { cookie } })).json()),
+    ).toEqual({ login: 'anna-2', role: 'member' });
+    expect(await userCount()).toBe(2);
+  });
+
+  it('not_allowed for a known person ends their sessions; their tokens keep working', async () => {
+    const cookie = await signedIn(anna);
+    const created = await call('POST', '/api/tokens', cookie, { name: 'laptop' });
+    const { token } = CreatedToken.parse(await created.json());
+    const { callback } = await signIn({ ...anna, groups: ['family'] });
+    expect(callback.headers.get('location')).toBe('/login?loginError=not_allowed');
+    expect((await app.request('/api/auth/me', { headers: { cookie } })).status).toBe(401);
+    const viaToken = await app.request('/api/auth/me', {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(viaToken.status).toBe(200);
+    const [failed] = await pg.sql<{ actor_id: string | null; meta: Record<string, unknown> }[]>`
+      select actor_id, meta from platform.audit_log where action = 'auth.login_failed'`;
+    expect(failed?.actor_id).not.toBeNull();
+    expect(failed?.meta).toMatchObject({ reason: 'not_allowed', sessionsRevoked: true });
+  });
+
+  it('refuses a plain-http issuer unless explicitly allowed', async () => {
+    const config = configFor();
+    const oidc = config.oidc;
+    if (!oidc) throw new Error('no oidc');
+    const strict = new OpenidProvider({
+      issuer: oidc.issuer,
+      clientId: oidc.clientId,
+      clientSecret: oidc.clientSecret,
+      redirectUri: ssoRedirectUri(ORIGIN),
+    });
+    await expect(
+      strict.authorizationUrl({ state: 's', codeChallenge: 'c', nonce: 'n' }),
+    ).rejects.toMatchObject({ code: 'idp_unavailable' });
   });
 });
 
@@ -566,6 +661,7 @@ describe('the provider with its own scopes and groups claim', () => {
       redirectUri: ssoRedirectUri(ORIGIN),
       scopes: 'openid profile email',
       groupsClaim: claim,
+      allowInsecure: true,
     });
     try {
       const verifier = randomBytes(32).toString('base64url');
@@ -582,6 +678,7 @@ describe('the provider with its own scopes and groups claim', () => {
         sub: 'sub-anna',
         preferredUsername: 'Anna',
         email: 'anna@example.com',
+        emailVerified: true,
         groups: ['skills-users'],
       });
     } finally {

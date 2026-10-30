@@ -139,7 +139,21 @@ describe('single sign-on settings', () => {
       adminGroup: 'skills-admins',
       scopes: 'openid profile email groups',
       groupsClaim: 'groups',
+      allowInsecure: false,
     });
+  });
+
+  it('requires an https issuer unless OIDC_ALLOW_INSECURE=true', () => {
+    const http = { ...base, ...oidc, OIDC_ISSUER: 'http://idp.internal:8080' };
+    expect(() => loadConfig(http)).toThrow(/OIDC_ISSUER: must be an https: URL/);
+    expect(() => loadConfig({ ...http, OIDC_ALLOW_INSECURE: 'false' })).toThrow(/OIDC_ISSUER/);
+    expect(loadConfig({ ...http, OIDC_ALLOW_INSECURE: 'true' }).oidc).toMatchObject({
+      issuer: 'http://idp.internal:8080',
+      allowInsecure: true,
+    });
+    expect(() => loadConfig({ ...http, OIDC_ALLOW_INSECURE: 'yes' })).toThrow(
+      /OIDC_ALLOW_INSECURE/,
+    );
   });
 
   it('parses overrides; scopes may be comma or space separated, deduplicated', () => {

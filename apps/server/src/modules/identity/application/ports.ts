@@ -70,14 +70,15 @@ export interface UserRepository {
   setDisabled(id: string, disabled: boolean): Promise<boolean>;
   /** id → login for the given ids; unknown and non-UUID ids are absent from the map. */
   loginsByIds(ids: string[]): Promise<Map<string, string>>;
-  findBySub(sub: string): Promise<User | null>;
+  /** The user linked to this provider account (issuer + `sub`). */
+  findBySubject(subject: OidcSubject): Promise<User | null>;
   /**
-   * Creates a user from a first single sign-on (no password). Null when the login or the `sub`
-   * is already taken (a concurrent first login of the same person).
+   * Creates a user from a first single sign-on (no password). Null when the login or the
+   * provider account is already taken (a concurrent first login of the same person).
    */
   insertSso(user: {
     login: string;
-    oidcSub: string;
+    subject: OidcSubject;
     email: string | null;
     groups: string[];
     role: Role;
@@ -91,7 +92,7 @@ export interface UserRepository {
   /** After a password sign-in. */
   setLastLogin(id: string, at: Date): Promise<void>;
   /** Links the user to a provider account, or unlinks it (null). False if the user is unknown. */
-  setOidcSub(id: string, sub: string | null): Promise<boolean>;
+  setOidcSubject(id: string, subject: OidcSubject | null): Promise<boolean>;
 }
 
 export interface TokenRepository {
@@ -129,6 +130,12 @@ export interface OidcProvider {
   }): Promise<OidcClaims>;
 }
 
+/** A provider account: `sub` is unique only within its issuer. */
+export interface OidcSubject {
+  iss: string;
+  sub: string;
+}
+
 /** A started, not yet completed single sign-on. One-time: `consume` removes it. */
 export interface PendingLogin {
   state: string;
@@ -139,7 +146,7 @@ export interface PendingLogin {
 }
 
 export interface PendingLoginRepository {
-  /** Also drops long-expired attempts, so abandoned logins do not pile up. */
+  /** Also drops expired attempts, so abandoned logins do not pile up. */
   insert(pending: PendingLogin): Promise<void>;
   /** Atomically removes and returns the record; null if unknown or already consumed. */
   consume(state: string): Promise<PendingLogin | null>;
@@ -147,6 +154,8 @@ export interface PendingLoginRepository {
 
 /** Single sign-on settings; present only when OIDC is configured (then the web UI is SSO-only). */
 interface SsoDeps {
+  /** The configured `OIDC_ISSUER`; accounts are keyed by (issuer, `sub`). */
+  issuer: string;
   provider: OidcProvider;
   policy: GroupPolicy;
 }
@@ -168,6 +177,8 @@ export interface IdentityDeps {
   loginLimiter: RateLimiter;
   ipLimiter: RateLimiter;
   ipGate: ConcurrencyGate;
+  /** Per IP: how many single sign-ons may be started (each stores a pending attempt). */
+  ssoStartLimiter: RateLimiter;
   tokenLimiter: RateLimiter;
   auditThrottle: AuditThrottle;
   audit: AuditLog;

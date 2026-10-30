@@ -13,6 +13,11 @@ export interface OpenidProviderConfig {
   scopes?: string;
   /** Claim holding the person's groups; default `DEFAULT_GROUPS_CLAIM`. */
   groupsClaim?: string;
+  /**
+   * Allows a plain `http:` issuer (a provider on a private network, tests). Without it an
+   * `http:` issuer is refused; the configuration already rejects it (`OIDC_ALLOW_INSECURE`).
+   */
+  allowInsecure?: boolean;
   /** Where degraded-provider warnings go; never receives tokens or claims. */
   logger?: { warn(fields: object, msg: string): void };
 }
@@ -55,6 +60,26 @@ export function isProviderOutage(error: unknown): boolean {
   return status !== null && status >= 500;
 }
 
+/** A value fit for a log line: a short identifier-like code, never free text. */
+function safeCode(value: unknown): string | null {
+  return typeof value === 'string' && /^[\w.:-]{1,64}$/.test(value) ? value : null;
+}
+
+/**
+ * The machine-readable reasons of a rejected code exchange: the OAuth `error` of the answer
+ * (`invalid_grant`, `invalid_client`…) and openid-client's own error `code`
+ * (`OAUTH_JWT_CLAIM_COMPARISON_FAILED`…). Descriptions are left out: they may echo input.
+ */
+export function rejectionCodes(error: unknown): { oauthError?: string; code?: string } {
+  if (error === null || typeof error !== 'object') return {};
+  const oauthError = 'error' in error ? safeCode(error.error) : null;
+  const code = 'code' in error ? safeCode(error.code) : null;
+  return {
+    ...(oauthError === null ? {} : { oauthError }),
+    ...(code === null ? {} : { code }),
+  };
+}
+
 /** Discovery gives up after this long, so a login attempt never hangs on a dead provider. */
 const DISCOVERY_TIMEOUT_SECONDS = 5;
 
@@ -81,8 +106,9 @@ export class OpenidProvider implements OidcProvider {
 
   private discover(): Promise<oidc.Configuration> {
     const issuer = new URL(this.cfg.issuer);
-    // Plain http is for a provider on a private network or in tests; https issuers never reach it.
-    const execute = issuer.protocol === 'http:' ? [oidc.allowInsecureRequests] : [];
+    // Plain http only when the operator opted in (OIDC_ALLOW_INSECURE); https never needs it.
+    const insecure = issuer.protocol === 'http:' && this.cfg.allowInsecure === true;
+    const execute = insecure ? [oidc.allowInsecureRequests] : [];
     return oidc.discovery(
       issuer,
       this.cfg.clientId,
@@ -128,7 +154,15 @@ export class OpenidProvider implements OidcProvider {
         idTokenExpected: true,
       });
     } catch (error) {
-      if (!isProviderOutage(error)) throw error;
+      if (!isProviderOutage(error)) {
+        // The person only sees "invalid_state"; the operator needs to know why (bad client
+        // secret, clock skew, wrong issuer…). Only fixed codes, never descriptions or tokens.
+        this.cfg.logger?.warn(
+          { err: errorFields(error), ...rejectionCodes(error) },
+          'oidc code exchange rejected',
+        );
+        throw error;
+      }
       this.cfg.logger?.warn({ err: errorFields(error) }, 'oidc token endpoint unavailable');
       throw new IdentityError('idp_unavailable', 'the identity provider is unavailable');
     }
@@ -149,10 +183,13 @@ export class OpenidProvider implements OidcProvider {
         );
       }
     }
+    // email and email_verified come from the same source, so one never vouches for the other.
+    const source = text(profile['email']) === null ? id : profile;
     return {
       sub: id.sub,
       preferredUsername: text(profile['preferred_username']) ?? text(id['preferred_username']),
-      email: text(profile['email']) ?? text(id['email']),
+      email: text(source['email']),
+      emailVerified: source['email_verified'] === true,
       groups: groupsOf(profile[claim]) ?? [],
     };
   }

@@ -55,9 +55,14 @@ function ssoDeps(config: Config, logger: Logger, override?: OidcProvider): Ident
       redirectUri: ssoRedirectUri(config.publicUrl),
       scopes: oidc.scopes,
       groupsClaim: oidc.groupsClaim,
+      allowInsecure: oidc.allowInsecure,
       logger,
     });
-  return { provider, policy: { loginGroup: oidc.loginGroup, adminGroup: oidc.adminGroup } };
+  return {
+    issuer: oidc.issuer,
+    provider,
+    policy: { loginGroup: oidc.loginGroup, adminGroup: oidc.adminGroup },
+  };
 }
 
 function createEmbedder(config: Config): Embedder {

@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import type {
   IdentityDeps,
   OidcProvider,
+  OidcSubject,
   PasswordHasher,
   PendingLogin,
   PendingLoginRepository,
@@ -67,7 +68,7 @@ class FakeGate {
 
 type NewPasswordUser = Pick<User, 'login' | 'passwordHash' | 'role' | 'createdAt'>;
 
-const ssoDefaults = { oidcSub: null, email: null, groups: [], lastLoginAt: null };
+const ssoDefaults = { oidcIss: null, oidcSub: null, email: null, groups: [], lastLoginAt: null };
 
 class MemUsers implements UserRepository {
   rows: User[] = [];
@@ -113,23 +114,28 @@ class MemUsers implements UserRepository {
     u.disabled = disabled;
     return true;
   }
-  async findBySub(sub: string) {
-    return this.rows.find((u) => u.oidcSub === sub) ?? null;
+  async findBySubject(s: OidcSubject) {
+    return this.rows.find((u) => u.oidcIss === s.iss && u.oidcSub === s.sub) ?? null;
   }
   /** Runs before each insertSso, e.g. to simulate a concurrent first login. */
   beforeInsertSso: (() => void) | null = null;
-  async insertSso(u: {
+  async insertSso({
+    subject,
+    ...u
+  }: {
     login: string;
-    oidcSub: string;
+    subject: OidcSubject;
     email: string | null;
     groups: string[];
     role: Role;
     createdAt: Date;
   }) {
     this.beforeInsertSso?.();
-    if ((await this.findByLogin(u.login)) || (await this.findBySub(u.oidcSub))) return null;
+    if ((await this.findByLogin(u.login)) || (await this.findBySubject(subject))) return null;
     const user: User = {
       ...u,
+      oidcIss: subject.iss,
+      oidcSub: subject.sub,
       id: randomUUID(),
       passwordHash: null,
       disabled: false,
@@ -148,10 +154,11 @@ class MemUsers implements UserRepository {
     const u = this.rows.find((x) => x.id === id);
     if (u) u.lastLoginAt = at;
   }
-  async setOidcSub(id: string, sub: string | null) {
+  async setOidcSubject(id: string, s: OidcSubject | null) {
     const u = this.rows.find((x) => x.id === id);
     if (!u) return false;
-    u.oidcSub = sub;
+    u.oidcIss = s?.iss ?? null;
+    u.oidcSub = s?.sub ?? null;
     return true;
   }
 }
@@ -170,7 +177,13 @@ class MemPendingLogins implements PendingLoginRepository {
 
 /** A scripted identity provider: `claims` is what the next exchange returns, `fail` what it throws. */
 class FakeOidc implements OidcProvider {
-  claims: OidcClaims = { sub: 'sub-1', preferredUsername: 'anna', email: null, groups: [] };
+  claims: OidcClaims = {
+    sub: 'sub-1',
+    preferredUsername: 'anna',
+    email: null,
+    emailVerified: false,
+    groups: [],
+  };
   /** Thrown by `authorizationUrl` when set. */
   startError: unknown = null;
   /** Thrown by `exchange` when set. */
@@ -263,6 +276,7 @@ export interface TestEnv {
   oidc: FakeOidc;
   hasher: FakeHasher;
   loginLimiter: FakeLimiter;
+  ssoStartLimiter: FakeLimiter;
   audit: {
     actorId: string | null;
     action: string;
@@ -273,12 +287,14 @@ export interface TestEnv {
 }
 
 const TEST_POLICY = { loginGroup: 'skills-users', adminGroup: 'skills-admins' };
+export const TEST_ISSUER = 'https://idp.example';
 
 /** In-memory identity; with `sso` the single sign-on mode is on (FakeOidc, TEST_POLICY). */
 export function makeEnv(opts: { sso?: boolean } = {}): TestEnv {
   const users = new MemUsers();
   const pendingLogins = new MemPendingLogins();
   const oidc = new FakeOidc();
+  const ssoStartLimiter = new FakeLimiter(30);
   const tokens = new MemTokens();
   const sessions = new MemSessions();
   const hasher = new FakeHasher();
@@ -290,12 +306,13 @@ export function makeEnv(opts: { sso?: boolean } = {}): TestEnv {
     tokens,
     sessions,
     pendingLogins,
-    sso: opts.sso ? { provider: oidc, policy: TEST_POLICY } : null,
+    sso: opts.sso ? { issuer: TEST_ISSUER, provider: oidc, policy: TEST_POLICY } : null,
     hasher,
     sha256: testSha256,
     loginLimiter,
     ipLimiter: new FakeLimiter(20),
     ipGate: new FakeGate(5),
+    ssoStartLimiter,
     tokenLimiter: new FakeLimiter(30),
     audit: {
       record: async (e) => {
@@ -315,6 +332,7 @@ export function makeEnv(opts: { sso?: boolean } = {}): TestEnv {
     oidc,
     hasher,
     loginLimiter,
+    ssoStartLimiter,
     audit,
     time,
   };

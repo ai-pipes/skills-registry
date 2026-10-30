@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { groupsOf, isProviderOutage } from './openid-provider.ts';
+import { groupsOf, isProviderOutage, rejectionCodes } from './openid-provider.ts';
 
 const withCode = (e: Error, code: string) => Object.assign(e, { code });
 
@@ -43,5 +43,30 @@ describe('groupsOf', () => {
     expect(groupsOf('skills-users')).toBeNull();
     expect(groupsOf(['skills-users', 1])).toBeNull();
     expect(groupsOf(null)).toBeNull();
+  });
+});
+
+describe('rejectionCodes', () => {
+  it('keeps the OAuth error and the library code', () => {
+    const e = Object.assign(new Error('server responded with an error'), {
+      error: 'invalid_grant',
+      error_description: 'code abc123 was already used',
+      code: 'OAUTH_RESPONSE_BODY_ERROR',
+    });
+    expect(rejectionCodes(e)).toEqual({
+      oauthError: 'invalid_grant',
+      code: 'OAUTH_RESPONSE_BODY_ERROR',
+    });
+  });
+
+  it('drops anything that is not a short code', () => {
+    expect(rejectionCodes(Object.assign(new Error('x'), { error: 'has spaces in it' }))).toEqual(
+      {},
+    );
+    expect(rejectionCodes(Object.assign(new Error('x'), { code: 'x'.repeat(65) }))).toEqual({});
+    expect(rejectionCodes(Object.assign(new Error('x'), { error: 42 }))).toEqual({});
+    expect(rejectionCodes(new Error('plain'))).toEqual({});
+    expect(rejectionCodes('boom')).toEqual({});
+    expect(rejectionCodes(null)).toEqual({});
   });
 });

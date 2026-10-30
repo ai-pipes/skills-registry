@@ -25,6 +25,9 @@ export function createPgIdentity(sql: Sql): PgIdentity {
     loginLimiter: new InMemoryRateLimiter(5, 15 * 60, 15 * 60),
     ipLimiter: new InMemoryRateLimiter(20, 15 * 60, 15 * 60),
     ipGate: new InMemoryConcurrencyGate(5),
+    // A browser starts one attempt per click; 30 per 10 minutes leaves room for a whole office
+    // behind one NAT address while bounding the pending attempts (they expire after 10 minutes).
+    ssoStartLimiter: new InMemoryRateLimiter(30, 10 * 60, 10 * 60),
     tokenLimiter: new InMemoryRateLimiter(30, 60, 60),
     auditThrottle: new InMemoryAuditThrottle(15 * 60_000),
   };

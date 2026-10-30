@@ -45,6 +45,7 @@ const SSO_ERRORS = new Set<string>([
   'not_allowed',
   'disabled',
   'idp_unavailable',
+  'rate_limited',
 ] satisfies SsoLoginError[]);
 
 /** Where the browser goes after a failed single sign-on. */
@@ -64,12 +65,13 @@ export function authRoutes(deps: IdentityDeps, opts: AuthRouteOptions) {
       const returnTo = query.success ? query.data.returnTo : '/';
       let started;
       try {
-        started = await startSsoLogin(deps, { returnTo });
+        started = await startSsoLogin(deps, { returnTo, ip: c.get('clientIp') });
       } catch (error) {
         opts.logError(error, 'auth: sso login start failed');
         return c.redirect(loginErrorUrl('internal'), 302);
       }
-      // The provider is unreachable: back to the login page with a fixed code.
+      // Provider unreachable or too many attempts: back to the login page with a fixed code (a
+      // top-level navigation, so a page the person can read rather than a JSON 429).
       if (!started.ok) return c.redirect(loginErrorUrl(started.error.code), 302);
       setLoginBindingCookie(c, started.value.state, opts.cookieSecure);
       return c.redirect(started.value.url.toString(), 302);

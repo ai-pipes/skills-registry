@@ -42,6 +42,7 @@ export const strings = {
       not_allowed: 'Your account is not in an allowed group. Ask an administrator for access.',
       disabled: 'Your account is disabled.',
       idp_unavailable: 'The identity provider is unavailable. Try again later.',
+      rate_limited: 'Too many sign-in attempts. Try again in a few minutes.',
       internal: 'Something went wrong while signing in. Try again.',
     } as Record<string, string>,
   },

@@ -80,10 +80,19 @@ What changes in SSO mode:
   tokens and sign-out work as before; disabling still ends sessions and revokes tokens.
 - Access and role come from the person's IdP groups: a member of `OIDC_ADMIN_GROUP` is an `admin`,
   a member of `OIDC_LOGIN_GROUP` is a `member`, anyone else is refused. The role is re-synced on
-  every SSO sign-in.
+  every SSO sign-in. A known person who is refused because they left both groups also loses their
+  web sessions at that moment; their API tokens are **not** revoked (tokens are independent of
+  SSO), so off-boarding is complete only after disabling the user on the "Users" page.
 - The first SSO sign-in of an unknown person creates a user. Its login is taken from
-  `preferred_username`, else the local part of the email, else the IdP subject (`sub`), adjusted to
-  the login rules (`-2`, `-3`… on collision). The login is not changed on later sign-ins.
+  `preferred_username`, else the local part of the email (only if the IdP marks it
+  `email_verified`), else the IdP subject (`sub`): NFKC-normalised, lower-cased and reduced to
+  `a-z`, `0-9`, `.`, `_`, `-` (other characters become `-`), `user` if nothing is left, then `-2`,
+  `-3`… on collision. The login is not changed on later sign-ins.
+- An IdP account is identified by the issuer and its subject (`OIDC_ISSUER` + `sub`). After
+  changing `OIDC_ISSUER`, sign-ins never land on users linked to the old issuer: everyone gets a new
+  user until the operator links the old ones again (`link-sso`, below).
+- Starting a sign-in is limited to 30 per IP address per 10 minutes
+  (`/login?loginError=rate_limited`).
 - `ADMIN_LOGIN`/`ADMIN_PASSWORD` are ignored (with a warning in the log). The first administrator is
   whoever signs in as a member of `OIDC_ADMIN_GROUP`.
 
@@ -111,15 +120,16 @@ has no such claim, the server asks UserInfo.
 These are starting points, not tested recipes: check the claims your provider actually issues (for
 example on its token preview page).
 
-| Variable             | Default                       | Meaning                                                                                                          |
-| -------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `OIDC_ISSUER`        | unset                         | issuer URL; discovery at `<OIDC_ISSUER>/.well-known/openid-configuration` happens on the first sign-in           |
-| `OIDC_CLIENT_ID`     | unset                         | client ID of the confidential client                                                                             |
-| `OIDC_CLIENT_SECRET` | unset                         | client secret                                                                                                    |
-| `OIDC_LOGIN_GROUP`   | `skills-users`                | members of this group may sign in (as `member`)                                                                  |
-| `OIDC_ADMIN_GROUP`   | `skills-admins`               | members of this group may sign in and are admins                                                                 |
-| `OIDC_SCOPES`        | `openid profile email groups` | scopes of the sign-in request, space- or comma-separated; must include `openid`                                  |
-| `OIDC_GROUPS_CLAIM`  | `groups`                      | claim with the person's groups (ID token, else UserInfo): a list of names, or an object whose keys are the names |
+| Variable              | Default                       | Meaning                                                                                                                                                                               |
+| --------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OIDC_ISSUER`         | unset                         | issuer URL; discovery at `<OIDC_ISSUER>/.well-known/openid-configuration` happens on the first sign-in                                                                                |
+| `OIDC_CLIENT_ID`      | unset                         | client ID of the confidential client                                                                                                                                                  |
+| `OIDC_CLIENT_SECRET`  | unset                         | client secret                                                                                                                                                                         |
+| `OIDC_LOGIN_GROUP`    | `skills-users`                | members of this group may sign in (as `member`)                                                                                                                                       |
+| `OIDC_ADMIN_GROUP`    | `skills-admins`               | members of this group may sign in and are admins                                                                                                                                      |
+| `OIDC_SCOPES`         | `openid profile email groups` | scopes of the sign-in request, space- or comma-separated; must include `openid`                                                                                                       |
+| `OIDC_GROUPS_CLAIM`   | `groups`                      | claim with the person's groups (ID token, else UserInfo): a list of names, or an object whose keys are the names                                                                      |
+| `OIDC_ALLOW_INSECURE` | `false`                       | allow a plain `http://` `OIDC_ISSUER` (a provider on a private network only: the client secret and tokens travel unencrypted); otherwise an `http://` issuer is a configuration error |
 
 `OIDC_ISSUER` must be exactly the `issuer` value from the discovery document (mind the trailing
 slash): the server checks it on every sign-in. Check it with
@@ -135,13 +145,14 @@ skill authorship and tokens), the operator links the IdP subject to the existing
 docker compose exec app node dist/cli.js link-sso alice <sub>
 ```
 
+The link is stored for the configured `OIDC_ISSUER` (so `link-sso` needs the OIDC settings).
 `<sub>` is the person's subject identifier at the IdP. It is shown on the user's page in most
 providers (Pocket ID, Authentik, Keycloak: the user ID). If the person has already signed in through
 SSO, the subject is stored on the separate user that sign-in created:
 
 ```bash
 docker compose exec db psql -U skills -d skills -c \
-  "select login, oidc_sub, email, last_login_at from identity.users where oidc_sub is not null"
+  "select login, oidc_iss, oidc_sub, email, last_login_at from identity.users where oidc_sub is not null"
 ```
 
 (The sign-in itself is in the audit log: `platform.audit_log`, action `auth.login`,
@@ -169,9 +180,13 @@ A failed SSO sign-in returns to `/login?loginError=<code>`, and the page explain
 | `not_allowed`     | the person is in neither `OIDC_LOGIN_GROUP` nor `OIDC_ADMIN_GROUP`, or the groups claim is missing: check `OIDC_GROUPS_CLAIM`/scopes |
 | `disabled`        | the user is disabled in the registry; enable them on the "Users" page                                                                |
 | `invalid_state`   | the sign-in attempt expired (10 minutes) or was started in another browser; start again from the sign-in page                        |
-| `internal`        | anything else (for example the code exchange or the issuer check failed); the reason is in the server log                            |
+| `rate_limited`    | too many sign-in attempts from this IP address (more than 30 in 10 minutes); wait and try again                                      |
+| `internal`        | anything else; the reason is in the server log                                                                                       |
 
-Failed attempts are also recorded in the audit log as `auth.login_failed` with `meta.reason`.
+A rejected code exchange (wrong client secret, issuer mismatch, clock skew…) is shown as
+`invalid_state`; the server log has a warning `oidc code exchange rejected` with the OAuth error
+code (`oauthError`, e.g. `invalid_client`) and the library's error `code`. Failed attempts are also
+recorded in the audit log as `auth.login_failed` with `meta.reason`.
 
 ## Connecting Claude Code
 

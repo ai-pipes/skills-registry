@@ -45,6 +45,7 @@ export const SsoLoginError = z.enum([
   'not_allowed',
   'disabled',
   'idp_unavailable',
+  'rate_limited',
   'internal',
 ]);
 export type SsoLoginError = z.infer<typeof SsoLoginError>;

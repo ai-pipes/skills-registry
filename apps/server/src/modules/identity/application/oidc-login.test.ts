@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vite-plus/test';
-import { idpDown, makeEnv, seedUser, type TestEnv } from '../../../../test/identity/fakes.ts';
+import {
+  idpDown,
+  makeEnv,
+  seedUser,
+  TEST_ISSUER,
+  type TestEnv,
+} from '../../../../test/identity/fakes.ts';
 import type { OidcClaims } from '../domain/user.ts';
 import { completeSsoLogin, startSsoLogin } from './oidc-login.ts';
 import { authenticateSession } from './sessions.ts';
@@ -13,12 +19,13 @@ const claims = (over: Partial<OidcClaims> = {}): OidcClaims => ({
   sub: 'sub-1',
   preferredUsername: 'Anna',
   email: 'anna@example.com',
+  emailVerified: true,
   groups: ['skills-users'],
   ...over,
 });
 
 async function started(returnTo = '/skills') {
-  const r = await startSsoLogin(env.deps, { returnTo });
+  const r = await startSsoLogin(env.deps, { returnTo, ip: 'ip' });
   if (!r.ok) throw r.error;
   return r.value;
 }
@@ -50,19 +57,19 @@ describe('startSsoLogin', () => {
 
   it('idp_unavailable, and nothing remembered, when the provider is down', async () => {
     env.oidc.startError = idpDown();
-    const r = await startSsoLogin(env.deps, { returnTo: '/' });
+    const r = await startSsoLogin(env.deps, { returnTo: '/', ip: 'ip' });
     expect(r).toMatchObject({ ok: false, error: { code: 'idp_unavailable' } });
     expect(env.pendingLogins.rows).toEqual([]);
   });
 
   it('a start error that is not about the provider propagates', async () => {
     env.oidc.startError = new Error('bug');
-    await expect(startSsoLogin(env.deps, { returnTo: '/' })).rejects.toThrow('bug');
+    await expect(startSsoLogin(env.deps, { returnTo: '/', ip: 'ip' })).rejects.toThrow('bug');
   });
 
   it('not_found without single sign-on', async () => {
     env = makeEnv();
-    expect(await startSsoLogin(env.deps, { returnTo: '/' })).toMatchObject({
+    expect(await startSsoLogin(env.deps, { returnTo: '/', ip: 'ip' })).toMatchObject({
       ok: false,
       error: { code: 'not_found' },
     });
@@ -82,6 +89,7 @@ describe('completeSsoLogin', () => {
     const [user] = env.users.rows;
     expect(user).toMatchObject({
       login: 'anna',
+      oidcIss: TEST_ISSUER,
       oidcSub: 'sub-1',
       email: 'anna@example.com',
       groups: ['skills-users'],
@@ -132,7 +140,7 @@ describe('completeSsoLogin', () => {
 
   it('a linked password user keeps id, login and password; role follows the groups', async () => {
     const bob = await seedUser(env, 'bob', 'member');
-    await env.users.setOidcSub(bob.id, 'sub-bob');
+    await env.users.setOidcSubject(bob.id, { iss: TEST_ISSUER, sub: 'sub-bob' });
     const r = await signIn(
       claims({ sub: 'sub-bob', preferredUsername: 'robert', groups: ['skills-admins'] }),
     );
@@ -223,6 +231,7 @@ describe('completeSsoLogin', () => {
         role: 'member',
         disabled: false,
         createdAt: env.time.now,
+        oidcIss: TEST_ISSUER,
         oidcSub: 'sub-1',
         email: null,
         groups: [],
@@ -245,6 +254,7 @@ describe('completeSsoLogin', () => {
         role: 'member',
         disabled: true,
         createdAt: env.time.now,
+        oidcIss: TEST_ISSUER,
         oidcSub: 'sub-1',
         email: null,
         groups: [],
@@ -259,5 +269,74 @@ describe('completeSsoLogin', () => {
       Array.from({ length: 100 }, (_, i) => seedUser(env, i === 0 ? 'anna' : `anna-${i + 1}`)),
     );
     await expect(signIn(claims())).rejects.toThrow(/no free login/);
+  });
+});
+
+describe('limits and isolation', () => {
+  it('rate-limits starts per IP, stores nothing then, and audits once per window', async () => {
+    const starts = await Promise.all(
+      Array.from({ length: 32 }, () => startSsoLogin(env.deps, { returnTo: '/', ip: 'flood' })),
+    );
+    expect(starts.filter((r) => r.ok)).toHaveLength(30);
+    expect(starts.at(-1)).toMatchObject({
+      ok: false,
+      error: { code: 'rate_limited', retryAfterSec: 60 },
+    });
+    expect(env.pendingLogins.rows).toHaveLength(30);
+    expect(
+      env.audit.filter((a) => a.meta?.['reason'] === 'rate_limited' && a.meta['method'] === 'sso'),
+    ).toHaveLength(1);
+    // another address is not affected
+    expect((await startSsoLogin(env.deps, { returnTo: '/', ip: 'other' })).ok).toBe(true);
+  });
+
+  it('does not store an over-long returnTo', async () => {
+    await started(`/${'a'.repeat(600)}`);
+    expect(env.pendingLogins.rows[0]?.returnTo).toBe('/');
+  });
+
+  it('the same sub at another issuer is another person', async () => {
+    const old = await seedUser(env, 'old-anna', 'admin');
+    await env.users.setOidcSubject(old.id, { iss: 'https://old-idp.example', sub: 'sub-1' });
+    const r = await signIn(claims());
+    expect(r.ok).toBe(true);
+    expect(env.users.rows).toHaveLength(2);
+    expect(env.users.rows[1]).toMatchObject({
+      login: 'anna',
+      oidcIss: TEST_ISSUER,
+      role: 'member',
+    });
+    expect(old.role).toBe('admin');
+  });
+
+  it('not_allowed for a known person ends their web sessions, keeps their tokens', async () => {
+    const ok = await signIn(claims());
+    expect(ok.ok).toBe(true);
+    const [user] = env.users.rows;
+    await env.tokens.insert({
+      userId: user?.id ?? '',
+      name: 't',
+      prefix: 'sk_x',
+      hash: 'h',
+      createdAt: env.time.now,
+    });
+    expect(env.sessions.rows).toHaveLength(1);
+    const r = await signIn(claims({ groups: [] }));
+    expect(r).toMatchObject({ ok: false, error: { code: 'not_allowed' } });
+    expect(env.sessions.rows).toEqual([]);
+    expect(env.tokens.rows[0]?.revokedAt).toBeNull();
+    expect(env.audit.at(-1)).toEqual({
+      actorId: user?.id,
+      action: 'auth.login_failed',
+      meta: { reason: 'not_allowed', method: 'sso', ip: 'ip', sub: 'sub-1', sessionsRevoked: true },
+    });
+  });
+
+  it('an unverified email is not used for the login', async () => {
+    await signIn(
+      claims({ preferredUsername: null, email: 'admin@example.com', emailVerified: false }),
+    );
+    expect(env.users.rows[0]?.login).toBe('sub-1');
+    expect(env.users.rows[0]?.email).toBe('admin@example.com');
   });
 });
