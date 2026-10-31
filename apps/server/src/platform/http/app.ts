@@ -5,6 +5,7 @@ import { type Context, Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { folderRoutes } from '../../modules/catalog/interfaces/http/folders.ts';
 import { skillRoutes } from '../../modules/catalog/interfaces/http/skills.ts';
+import { subagentRoutes } from '../../modules/catalog/interfaces/http/subagents.ts';
 import { authRoutes, PUBLIC_AUTH_PATHS } from '../../modules/identity/interfaces/http/auth.ts';
 import {
   hasSessionCookie,
@@ -139,6 +140,11 @@ export function createHttpApp(c: Container, opts: HttpAppOptions = {}): HttpApp 
   );
   const logins = (ids: string[]) => loginsByIds(c.identity, ids);
   app.route('/api/skills', skillRoutes(c.catalog, search, logins));
+  // Subagent search arrives with the Search kinds (Task 6); until then a query matches nothing.
+  app.route(
+    '/api/subagents',
+    subagentRoutes(c.catalog, () => Promise.resolve([]), logins),
+  );
   app.route('/api/folders', folderRoutes(c.catalog));
   app.route('/api/tokens', tokenRoutes(c.identity, { publicUrl: config.publicUrl }));
   app.route('/api/users', userRoutes(c.identity));

@@ -34,5 +34,8 @@ export const UpdateFolderRequest = z.object({
 });
 export type UpdateFolderRequest = z.infer<typeof UpdateFolderRequest>;
 
-export const ArchiveFolderResponse = z.object({ archivedSkills: z.number().int() });
+export const ArchiveFolderResponse = z.object({
+  archivedSkills: z.number().int(),
+  archivedSubagents: z.number().int(),
+});
 export type ArchiveFolderResponse = z.infer<typeof ArchiveFolderResponse>;

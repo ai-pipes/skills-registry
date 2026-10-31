@@ -20,6 +20,7 @@ const view: SkillView = {
   version: 4,
   source: null,
   sourceCommit: null,
+  usedBy: [],
   skillMdSha256: '0'.repeat(64),
   skillMd:
     '---\nname: code-review\ndescription: Reviews a diff.\n---\n\n# Code review\n\nRead **the diff**.\n',
