@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { MAX_SUBAGENT_MD_BYTES, parseSubagentMd } from './subagent-md.ts';
+import { MAX_SUBAGENT_MD_BYTES, MAX_SUBAGENT_SKILLS, parseSubagentMd } from './subagent-md.ts';
 
 const file = (front: string, body = '') => `---\n${front}\n---\n${body}`;
 const base = 'name: devops\ndescription: d';
@@ -55,7 +55,10 @@ describe('parseSubagentMd', () => {
     ['bad model', `${base}\nmodel: gpt`],
     ['bad skill slug', `${base}\nskills: [Not_A_Slug]`],
     ['duplicate skills', `${base}\nskills: [a, a]`],
-    ['21 skills', `${base}\nskills: [${Array.from({ length: 21 }, (_, i) => `s${i}`).join(', ')}]`],
+    [
+      `${MAX_SUBAGENT_SKILLS + 1} skills`,
+      `${base}\nskills: [${Array.from({ length: MAX_SUBAGENT_SKILLS + 1 }, (_, i) => `s${i}`).join(', ')}]`,
+    ],
     ['unknown key', `${base}\ncolor: red`],
   ])('rejects %s', (_label, front) => rejected(file(front)));
 
