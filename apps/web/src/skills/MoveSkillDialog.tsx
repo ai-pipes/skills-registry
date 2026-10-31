@@ -2,7 +2,7 @@ import type { FolderRef } from '@skills/contracts';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { isApiError } from '@/api/errors.ts';
-import { useFolders, useMoveSkill } from '@/api/queries.ts';
+import { useFolders, useMoveSkill, useMoveSubagent } from '@/api/queries.ts';
 import { ErrorAlert } from '@/components/ErrorAlert.tsx';
 import { Button, buttonVariants } from '@/components/ui/button';
 import {
@@ -18,15 +18,26 @@ import { FolderPicker } from './FolderPicker.tsx';
 
 export interface MoveSkillDialogProps {
   slug: string;
+  /** What is moved: a skill (default) or a subagent; only the endpoint and the texts differ. */
+  kind?: 'skill' | 'subagent';
   current: FolderRef;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-/** Moves an active skill to another active folder. */
-export function MoveSkillDialog({ slug, current, open, onOpenChange }: MoveSkillDialogProps) {
+/** Moves an active skill (or subagent) to another active folder. */
+export function MoveSkillDialog({
+  slug,
+  kind = 'skill',
+  current,
+  open,
+  onOpenChange,
+}: MoveSkillDialogProps) {
   const folders = useFolders('active');
-  const move = useMoveSkill(slug);
+  const moveSkill = useMoveSkill(slug);
+  const moveSubagent = useMoveSubagent(slug);
+  const move = kind === 'subagent' ? moveSubagent : moveSkill;
+  const texts = kind === 'subagent' ? strings.subagent : strings.skill;
   const [target, setTarget] = useState('');
   const others = (folders.data ?? []).filter((f) => f.slug !== current.slug);
 
@@ -36,7 +47,7 @@ export function MoveSkillDialog({ slug, current, open, onOpenChange }: MoveSkill
     if (chosen === undefined) return;
     move.mutate(chosen.slug, {
       onSuccess: () => {
-        notify.success(strings.skill.moved(chosen.name));
+        notify.success(texts.moved(chosen.name));
         onOpenChange(false);
       },
     });
@@ -52,7 +63,7 @@ export function MoveSkillDialog({ slug, current, open, onOpenChange }: MoveSkill
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{strings.skill.moveTitle}</DialogTitle>
+          <DialogTitle>{texts.moveTitle}</DialogTitle>
         </DialogHeader>
         {folders.isError && <ErrorAlert error={folders.error} />}
         {folders.data !== undefined && others.length === 0 ? (

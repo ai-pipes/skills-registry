@@ -11,6 +11,8 @@ import { DiffPage } from '@/history/DiffView.tsx';
 import { HistoryPage } from '@/history/HistoryPage.tsx';
 import { SkillPage } from '@/skills/SkillPage.tsx';
 import { SkillsListPage } from '@/skills/SkillsListPage.tsx';
+import { SubagentPage } from '@/subagents/SubagentPage.tsx';
+import { SubagentsListPage } from '@/subagents/SubagentsListPage.tsx';
 import { strings } from '@/strings.ts';
 import { TokensPage } from '@/tokens/TokensPage.tsx';
 import { UsersPage } from '@/users/UsersPage.tsx';
@@ -24,6 +26,11 @@ function Root() {
       <Outlet />
     </AuthProvider>
   );
+}
+
+/** Placeholder for the subagent editor, history and diff pages (not built yet). */
+function Soon() {
+  return <EmptyState title={strings.common.comingSoon} />;
 }
 
 /** The app's routes. `/skills/:slug/diff` reads `?from=&to=` from the search string. */
@@ -45,6 +52,12 @@ export const routes: RouteObject[] = [
               { path: 'skills/:slug/edit', element: <EditorPage /> },
               { path: 'skills/:slug/history', element: <HistoryPage /> },
               { path: 'skills/:slug/diff', element: <DiffPage /> },
+              { path: 'subagents', element: <SubagentsListPage /> },
+              { path: 'subagents/new', element: <Soon /> },
+              { path: 'subagents/:slug', element: <SubagentPage /> },
+              { path: 'subagents/:slug/edit', element: <Soon /> },
+              { path: 'subagents/:slug/history', element: <Soon /> },
+              { path: 'subagents/:slug/diff', element: <Soon /> },
               { path: 'folders', element: <FoldersPage /> },
               { path: 'folders/new', element: <FolderFormPage /> },
               { path: 'folders/:slug/edit', element: <FolderFormPage /> },

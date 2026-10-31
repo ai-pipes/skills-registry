@@ -1,4 +1,5 @@
 import {
+  BotIcon,
   CircleUserIcon,
   FolderIcon,
   KeyRoundIcon,
@@ -33,6 +34,7 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { to: '/skills', label: strings.nav.skills, icon: LibraryIcon },
+  { to: '/subagents', label: strings.nav.subagents, icon: BotIcon },
   { to: '/folders', label: strings.nav.folders, icon: FolderIcon },
   { to: '/tokens', label: strings.nav.tokens, icon: KeyRoundIcon },
   { to: '/users', label: strings.nav.users, icon: UsersIcon, adminOnly: true },

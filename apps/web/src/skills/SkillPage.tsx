@@ -216,6 +216,20 @@ export function SkillPage() {
         </div>
         {data.source !== null && <SourceLine source={data.source} commit={data.sourceCommit} />}
         {data.description && <p className="text-muted-foreground">{data.description}</p>}
+        {data.usedBy.length > 0 && (
+          <p className="flex flex-wrap gap-x-2 text-sm text-muted-foreground">
+            <span>{strings.skill.usedBy}</span>
+            {data.usedBy.map((name) => (
+              <Link
+                key={name}
+                to={`/subagents/${encodeURIComponent(name)}`}
+                className="underline underline-offset-2"
+              >
+                {name}
+              </Link>
+            ))}
+          </p>
+        )}
       </header>
       {!archived && moving && (
         <MoveSkillDialog

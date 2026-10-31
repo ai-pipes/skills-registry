@@ -90,6 +90,26 @@ function sourceLine(text: string) {
 }
 
 describe('skill page', () => {
+  it('lists the subagents that use the skill as links ("Used by")', async () => {
+    skillApi({ ...view, usedBy: ['code-reviewer', 'planner'] });
+    renderSkill();
+    await screen.findByRole('heading', { level: 1, name: 'code-review' });
+    expect(screen.getByText(/^Used by/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'code-reviewer' }).getAttribute('href')).toBe(
+      '/subagents/code-reviewer',
+    );
+    expect(screen.getByRole('link', { name: 'planner' }).getAttribute('href')).toBe(
+      '/subagents/planner',
+    );
+  });
+
+  it('shows no "Used by" when nothing uses the skill', async () => {
+    skillApi();
+    renderSkill();
+    await screen.findByRole('heading', { level: 1, name: 'code-review' });
+    expect(screen.queryByText(/^Used by/)).toBeNull();
+  });
+
   it('shows the header, actions, rendered SKILL.md (no front matter) and the file tree', async () => {
     skillApi();
     renderSkill();
