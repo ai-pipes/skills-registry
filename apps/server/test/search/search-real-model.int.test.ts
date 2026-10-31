@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { createPgCatalog, createSkill } from '../../src/modules/catalog/index.ts';
 import {
   createCatalogSkillReader,
+  createCatalogSubagentReader,
   createPgSearch,
   DEFAULT_MIN_SIMILARITY,
   indexSkill,
@@ -62,6 +63,7 @@ describe.skipIf(!enabled)(`search relevance floor on the real model${SKIP_REASON
         allowRemote: !hasLocalModel,
       }),
       skills: createCatalogSkillReader(catalog),
+      subagents: createCatalogSubagentReader(catalog),
       minSimilarity: DEFAULT_MIN_SIMILARITY,
     };
     await Promise.all(

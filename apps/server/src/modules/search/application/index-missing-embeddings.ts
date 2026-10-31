@@ -1,5 +1,5 @@
-import { indexSkill } from './index-skill.ts';
-import type { SearchDeps } from './ports.ts';
+import { indexDocument } from './index-document.ts';
+import type { DocumentRef, SearchDeps } from './ports.ts';
 
 /** Consecutive failures that make the sweep treat the embedder as down and stop. */
 const OUTAGE_STREAK = 3;
@@ -9,15 +9,16 @@ const PROBE_TEXT = 'passage: health probe';
 const SWEEP_BUDGET_MS = 30_000;
 
 export type SweepResult = {
+  /** `kind:slug` of each re-indexed document. */
   indexed: string[];
-  /** Slugs whose embedding failed (marked or not). Slugs only, never content. */
+  /** `kind:slug` of each document whose embedding failed (marked or not); never content. */
   failed: string[];
   stoppedEarly: 'outage' | 'budget' | null;
 };
 
 /**
- * Recovery sweep: re-indexes up to `limit` documents whose embedding is null, e.g. after an
- * embedder outage outlasted the outbox retries. Does nothing until the embedder is ready.
+ * Recovery sweep: re-indexes up to `limit` documents of either kind whose embedding is null,
+ * e.g. after an embedder outage outlasted the outbox retries. Does nothing until the embedder is ready.
  * Sequential. A failure is an isolated "poison document" only if a later document succeeds;
  * then it is marked (`embed_failed_at`) and skipped for an hour. After a streak of
  * OUTAGE_STREAK failures a known-good probe passage is embedded: if it succeeds the streak is
@@ -33,10 +34,12 @@ export async function indexMissingEmbeddings(
   if (!(await deps.embedder.ready())) return result;
   const now = opts.now ?? Date.now;
   const deadline = now() + (opts.budgetMs ?? SWEEP_BUDGET_MS);
-  const slugs = await deps.index.slugsWithoutEmbedding(opts.limit);
+  const refs = await deps.index.slugsWithoutEmbedding(opts.limit);
+  const mark = (docs: DocumentRef[]) =>
+    Promise.all(docs.map((r) => deps.index.markEmbedFailed(r.kind, r.slug)));
   // Failures since the last success; marked only once a later document succeeds.
-  let streak: string[] = [];
-  await slugs.reduce(async (prev, slug) => {
+  let streak: DocumentRef[] = [];
+  await refs.reduce(async (prev, ref) => {
     await prev;
     if (result.stoppedEarly !== null) return;
     if (now() >= deadline) {
@@ -44,14 +47,14 @@ export async function indexMissingEmbeddings(
       return;
     }
     try {
-      await indexSkill(deps, { slug });
-      result.indexed.push(slug);
+      await indexDocument(deps, ref);
+      result.indexed.push(`${ref.kind}:${ref.slug}`);
       const isolated = streak;
       streak = [];
-      await Promise.all(isolated.map((s) => deps.index.markEmbedFailed(s)));
+      await mark(isolated);
     } catch {
-      result.failed.push(slug);
-      streak.push(slug);
+      result.failed.push(`${ref.kind}:${ref.slug}`);
+      streak.push(ref);
       if (streak.length >= OUTAGE_STREAK) {
         const healthy = await deps.embedder.embedPassages([PROBE_TEXT]).then(
           () => true,
@@ -60,7 +63,7 @@ export async function indexMissingEmbeddings(
         if (healthy) {
           const poison = streak;
           streak = [];
-          await Promise.all(poison.map((s) => deps.index.markEmbedFailed(s)));
+          await mark(poison);
         } else {
           result.stoppedEarly = 'outage';
         }

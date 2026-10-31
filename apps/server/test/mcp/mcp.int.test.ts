@@ -13,7 +13,7 @@ import {
 } from 'vite-plus/test';
 import { z } from 'zod';
 import { bootstrapAdmin } from '../../src/modules/identity/index.ts';
-import { indexSkill } from '../../src/modules/search/index.ts';
+import { indexSkill, indexSubagent } from '../../src/modules/search/index.ts';
 import type { Config } from '../../src/platform/config.ts';
 import { buildContainer, type Container } from '../../src/platform/container.ts';
 import { createHttpApp } from '../../src/platform/http/app.ts';
@@ -326,6 +326,9 @@ describe('MCP auth', () => {
   });
 });
 
+const pdfAgentMd = (slug: string) =>
+  `---\nname: ${slug}\ndescription: Extract text from PDF files\n---\nExtract PDF text.\n`;
+
 describe.each<Era>(['legacy', 'modern'])('MCP tools (%s era)', (era) => {
   let client: Client;
   let session: string;
@@ -423,6 +426,25 @@ describe.each<Era>(['legacy', 'modern'])('MCP tools (%s era)', (era) => {
       folders: ['empty'],
     });
     expect(SearchResults.parse(none.structuredContent).results).toEqual([]);
+  });
+
+  it('search_skills never returns a subagent, even one with the same slug', async () => {
+    const made = await Promise.all(
+      ['pdf', 'pdf-agent'].map((slug) =>
+        rest('POST', '/api/subagents', {
+          cookie: session,
+          body: { slug, folder: 'general', content: pdfAgentMd(slug) },
+        }),
+      ),
+    );
+    expect(made.map((r) => r.status)).toEqual([201, 201]);
+    await indexSubagent(container.search, { slug: 'pdf' });
+    await indexSubagent(container.search, { slug: 'pdf-agent' });
+    const r = await callTool(client, 'search_skills', { query: 'extract text from pdf' });
+    const { results } = SearchResults.parse(r.structuredContent);
+    expect(results.map((x) => x.slug)).toEqual(['pdf']);
+    expect(results[0]?.description).toBe('Extract text from PDF files');
+    expect(textOf(r)).not.toContain('pdf-agent');
   });
 
   it('search_skills rejects unknown, archived and wrongly cased folders', async () => {

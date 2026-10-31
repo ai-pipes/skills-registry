@@ -2,6 +2,7 @@ import {
   ArchiveFolderResponse,
   CreatedToken,
   ErrorBody,
+  SkillSummary,
   SkillView,
   SubagentDiff,
   SubagentSummary,
@@ -12,8 +13,9 @@ import {
 import type { Hono } from 'hono';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
 import { bootstrapAdmin } from '../../src/modules/identity/index.ts';
+import { indexSkill, indexSubagent } from '../../src/modules/search/index.ts';
 import type { Config } from '../../src/platform/config.ts';
-import { buildContainer } from '../../src/platform/container.ts';
+import { buildContainer, type Container } from '../../src/platform/container.ts';
 import { createHttpApp } from '../../src/platform/http/app.ts';
 import type { AppEnv } from '../../src/platform/http/env.ts';
 import { createLogger } from '../../src/platform/logger.ts';
@@ -24,6 +26,7 @@ const ORIGIN = 'http://skills.test';
 const ADMIN_PW = 'admin-password-123';
 
 let pg: Awaited<ReturnType<typeof startPg>>;
+let container: Container;
 let app: Hono<AppEnv>;
 let session: string;
 let token: string;
@@ -86,7 +89,7 @@ afterAll(async () => {
 beforeEach(async () => {
   await truncateAll(pg.sql);
   const logger = createLogger('info', { write: () => {} });
-  const container = buildContainer(config, pg.sql, { embedder: new FakeEmbedder(), logger });
+  container = buildContainer(config, pg.sql, { embedder: new FakeEmbedder(), logger });
   app = createHttpApp(container, { remoteAddress: () => '10.0.0.1' }).app;
   const boot = await bootstrapAdmin(container.identity, { login: 'admin', password: ADMIN_PW });
   if (!boot.ok) throw boot.error;
@@ -244,5 +247,38 @@ describe('/api/subagents', () => {
       archivedSkills: 1,
       archivedSubagents: 1,
     });
+  });
+
+  it('searches subagents with q in relevance order; skills search never returns them', async () => {
+    const add = async (slug: string, description: string, body: string, folder = 'general') => {
+      const res = await authed('POST', '/api/subagents', {
+        slug,
+        folder,
+        content: `---\nname: ${slug}\ndescription: ${description}\n---\n${body}\n`,
+      });
+      expect(res.status).toBe(201);
+      await indexSubagent(container.search, { slug });
+    };
+    await authed('POST', '/api/folders', { slug: 'ops', name: 'Ops', description: 'o' });
+    await add('notes', 'Writes release notes', 'Mention the deploy date.');
+    await add('deployer', 'Deploy services to production', 'You deploy. Deploy carefully.', 'ops');
+    await add('cook', 'Cooking recipes', 'You cook.');
+    expect((await createSkill('deploy')).status).toBe(201);
+    await indexSkill(container.search, { slug: 'deploy' });
+
+    const list = async (path: string) =>
+      SubagentSummary.array()
+        .parse(await (await authed('GET', path)).json())
+        .map((s) => s.slug);
+    const skills = async (path: string) =>
+      SkillSummary.array()
+        .parse(await (await authed('GET', path)).json())
+        .map((s) => s.slug);
+    expect(await list('/api/subagents?q=deploy')).toEqual(['deployer', 'notes']);
+    expect(await list('/api/subagents?q=deploy&folder=ops')).toEqual(['deployer']);
+    expect(await list('/api/subagents?q=weather')).toEqual([]);
+
+    expect(await skills('/api/skills?q=deploy')).toEqual(['deploy']);
+    expect(await skills('/api/skills?q=cooking')).toEqual([]);
   });
 });

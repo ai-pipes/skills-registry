@@ -67,7 +67,7 @@ const stripNewline = (s: string): string => s.replace(/\r?\n$/, '');
 const reindexCommand: Command = async (args, c, io) => {
   parse(args, {}, 0);
   const count = await reindexAll(c.search);
-  io.out(`reindexed ${count} skills`);
+  io.out(`reindexed ${count} documents`);
   return 0;
 };
 

@@ -55,7 +55,7 @@ const worker = startOutboxWorker({
     everyMs: SWEEP_EVERY_MS,
     run: async () => {
       // Bounded: stops after 3 consecutive failures (outage) or 30 s, so it never holds the
-      // outbox worker loop for long. Failed slugs are logged, never content.
+      // outbox worker loop for long. Failed `kind:slug` keys are logged, never content.
       const r = await indexMissingEmbeddings(container.search, { limit: SWEEP_BATCH });
       if (r.indexed.length > 0)
         logger.info({ documents: r.indexed.length }, 'search: filled in missing embeddings');

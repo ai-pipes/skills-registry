@@ -4,10 +4,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vite-plus
 import {
   archiveFolder,
   archiveSkill,
+  archiveSubagent,
   type CatalogDeps,
   createFolder,
   createPgCatalog,
   createSkill,
+  createSubagent,
   getSkill,
   moveSkill,
 } from '../../src/modules/catalog/index.ts';
@@ -16,13 +18,16 @@ import { Skill } from '../../src/modules/catalog/domain/skill.ts';
 import { Slug } from '../../src/modules/catalog/domain/slug.ts';
 import {
   createCatalogSkillReader,
+  createCatalogSubagentReader,
   createPgSearch,
   indexMissingEmbeddings,
   indexSkill,
+  indexSubagent,
   reindexAll,
   type SearchDeps,
   searchEventHandlers,
   searchSkills,
+  searchSubagents,
 } from '../../src/modules/search/index.ts';
 import { PgSearchIndex } from '../../src/modules/search/infrastructure/pg-search-index.ts';
 import { PgAuditLog } from '../../src/platform/audit.ts';
@@ -56,6 +61,7 @@ beforeEach(async () => {
     ...createPgSearch(pg.sql),
     embedder,
     skills: createCatalogSkillReader(catalog),
+    subagents: createCatalogSubagentReader(catalog),
     // FakeEmbedder vectors are bags of hashed tokens: unrelated texts have similarity ~0.
     minSimilarity: 0.3,
   };
@@ -149,8 +155,8 @@ describe('searchSkills (Postgres)', () => {
       ).map((r) => r.slug);
 
     expect(await indexMissingEmbeddings(search, { limit: 20 })).toEqual({
-      indexed: ['ok1', 'ok2'],
-      failed: ['a-poison'],
+      indexed: ['skill:ok1', 'skill:ok2'],
+      failed: ['skill:a-poison'],
       stoppedEarly: null,
     });
     expect(await embedded()).toEqual(['borscht', 'code-review', 'ok1', 'ok2', 'pdf']);
@@ -161,12 +167,16 @@ describe('searchSkills (Postgres)', () => {
     await pg.sql`update search.documents set embed_failed_at = now() - interval '2 hours'
       where slug = 'a-poison'`;
     // Retried after the hour; alone in the batch it is not provably isolated, so not re-marked.
-    expect((await indexMissingEmbeddings(search, { limit: 20 })).failed).toEqual(['a-poison']);
+    expect((await indexMissingEmbeddings(search, { limit: 20 })).failed).toEqual([
+      'skill:a-poison',
+    ]);
 
     embedder.embedPassages = real;
     await pg.sql`update search.documents set embed_failed_at = now() - interval '2 hours'
       where slug = 'a-poison'`;
-    expect((await indexMissingEmbeddings(search, { limit: 20 })).indexed).toEqual(['a-poison']);
+    expect((await indexMissingEmbeddings(search, { limit: 20 })).indexed).toEqual([
+      'skill:a-poison',
+    ]);
     const [row] =
       await pg.sql`select embed_failed_at from search.documents where slug = 'a-poison'`;
     expect(row?.['embed_failed_at']).toBeNull();
@@ -184,8 +194,8 @@ describe('searchSkills (Postgres)', () => {
       return real(texts);
     };
     expect(await indexMissingEmbeddings(search, { limit: 20 })).toEqual({
-      indexed: ['b-ok'],
-      failed: ['a-p1', 'a-p2', 'a-p3'],
+      indexed: ['skill:b-ok'],
+      failed: ['skill:a-p1', 'skill:a-p2', 'skill:a-p3'],
       stoppedEarly: null,
     });
     const marked = await pg.sql`select slug from search.documents
@@ -199,7 +209,10 @@ describe('searchSkills (Postgres)', () => {
     await pg.sql`update search.documents set embedding = null where slug in ('a-old', 'z-new')`;
     await pg.sql`update search.documents set embed_failed_at = now() - interval '2 hours'
       where slug = 'a-old'`;
-    expect(await search.index.slugsWithoutEmbedding(10)).toEqual(['z-new', 'a-old']);
+    expect(await search.index.slugsWithoutEmbedding(10)).toEqual([
+      { kind: 'skill', slug: 'z-new' },
+      { kind: 'skill', slug: 'a-old' },
+    ]);
   });
 
   it('stores an embedding next to the FTS vector', async () => {
@@ -389,7 +402,7 @@ describe('folder filter (Postgres)', () => {
       const before = await scans();
       const index = new PgSearchIndex(conn);
       const q = await embedder.embedQuery(QUERY);
-      expect(await index.vectorCandidates(q, 50, 0.3, ['target'])).toEqual(['receipts']);
+      expect(await index.vectorCandidates('skill', q, 50, 0.3, ['target'])).toEqual(['receipts']);
       await conn`select pg_stat_force_next_flush()`;
       expect(await scans()).toBeGreaterThan(before);
     } finally {
@@ -425,5 +438,157 @@ describe('folder filter (Postgres)', () => {
     expect(await searchSkills(search, { query: QUERY, limit: 10, folders: ['decoys'] })).toEqual(
       [],
     );
+  });
+});
+
+async function addSubagent(slug: string, description: string, body: string, folder = 'general') {
+  const res = await createSubagent(catalog, {
+    slug,
+    folder,
+    content: `---\nname: ${slug}\ndescription: ${description}\ntools: [Grep]\n---\n${body}\n`,
+    actorId: ACTOR,
+    message: null,
+  });
+  if (!res.ok) throw res.error;
+  await indexSubagent(search, { slug });
+}
+
+const subagentSlugs = async (query: string, folders?: string[]) =>
+  (await searchSubagents(search, { query, limit: 10, ...(folders ? { folders } : {}) })).map(
+    (h) => h.slug,
+  );
+
+const kindsOf = async (slug: string) =>
+  (
+    await pg.sql<{ kind: string }[]>`
+      select kind from search.documents where slug = ${slug} order by kind`
+  ).map((r) => r.kind);
+
+describe('subagents (Postgres)', () => {
+  it('indexes a skill and a subagent with the same slug; archiving one keeps the other', async () => {
+    await addSkill('devops', 'Deploy skill');
+    await addSubagent('devops', 'Deploy agent', 'You deploy services.');
+    expect(await kindsOf('devops')).toEqual(['skill', 'subagent']);
+
+    const archived = await archiveSubagent(catalog, { slug: 'devops', actorId: ACTOR });
+    if (!archived.ok) throw archived.error;
+    await indexSubagent(search, { slug: 'devops' });
+    expect(await kindsOf('devops')).toEqual(['skill']);
+
+    await addSubagent('other', 'Other agent', 'Other.');
+    const skill = await archiveSkill(catalog, { slug: 'devops', actorId: ACTOR });
+    if (!skill.ok) throw skill.error;
+    await indexSkill(search, { slug: 'devops' });
+    expect(await kindsOf('devops')).toEqual([]);
+    expect(await kindsOf('other')).toEqual(['subagent']);
+  });
+
+  it('indexes the prompt body without the frontmatter', async () => {
+    await addSubagent('reviewer', 'Reviews diffs', 'You review pull requests.');
+    embedder.failing = true;
+    expect(await subagentSlugs('pull requests')).toEqual(['reviewer']);
+    // `tools: [Grep]` lives only in the frontmatter.
+    expect(await subagentSlugs('grep')).toEqual([]);
+  });
+
+  it('searchSkills never returns a subagent, even the best match of both lists', async () => {
+    await Promise.all(
+      Array.from({ length: 60 }, (_, i) =>
+        addSubagent(
+          `agent-${String(i).padStart(2, '0')}`,
+          'Invoice parser. Invoice parser for invoice files',
+          'Invoice parser.',
+        ),
+      ),
+    );
+    await addSkill('receipts', 'Parser for scanned invoice receipts');
+    const hits = await searchSkills(search, { query: QUERY, limit: 100 });
+    expect(hits.map((h) => [h.slug, h.score])).toEqual([['receipts', 1]]);
+    embedder.failing = true;
+    const ftsOnly = await searchSkills(search, { query: QUERY, limit: 100 });
+    expect(ftsOnly.map((h) => [h.slug, h.score])).toEqual([['receipts', 0.5]]);
+    embedder.failing = false;
+    const agents = await searchSubagents(search, { query: QUERY, limit: 100 });
+    expect(agents.length).toBeGreaterThan(0);
+    expect(agents.every((h) => h.slug.startsWith('agent-'))).toBe(true);
+  });
+
+  it('searchSubagents restricts the search to folders', async () => {
+    await addFolder('ops');
+    await addSubagent('deployer', 'Deploys services', 'You deploy.', 'ops');
+    await addSubagent('reviewer', 'Reviews deploy scripts', 'You review.');
+    expect(await subagentSlugs('deploy')).toEqual(['deployer', 'reviewer']);
+    expect(await subagentSlugs('deploy', ['ops'])).toEqual(['deployer']);
+    const [hit] = await searchSubagents(search, { query: 'deploy', limit: 10, folders: ['ops'] });
+    expect(hit?.folder).toBe('ops');
+  });
+
+  it('reindexAll covers both kinds and drops stale documents of each', async () => {
+    await addSkill('devops', 'Deploy skill');
+    await addSubagent('devops', 'Deploy agent', 'You deploy.');
+    const stale = { name: 's', description: 's', version: 1, body: '', folder: 'general' };
+    await search.index.upsert({ ...stale, kind: 'skill', slug: 'gone', embedding: null });
+    await search.index.upsert({ ...stale, kind: 'subagent', slug: 'gone', embedding: null });
+    expect(await reindexAll(search)).toBe(2);
+    const rows = await pg.sql<{ kind: string; slug: string }[]>`
+      select kind, slug from search.documents order by kind, slug`;
+    expect(rows.map((r) => `${r.kind}:${r.slug}`)).toEqual(['skill:devops', 'subagent:devops']);
+  });
+
+  it('the embedding sweep fills in a subagent document', async () => {
+    await addSkill('devops', 'Deploy skill');
+    await addSubagent('devops', 'Deploy agent', 'You deploy.');
+    await pg.sql`update search.documents set embedding = null`;
+    expect(await search.index.slugsWithoutEmbedding(10)).toEqual([
+      { kind: 'skill', slug: 'devops' },
+      { kind: 'subagent', slug: 'devops' },
+    ]);
+    expect(await indexMissingEmbeddings(search, { limit: 20 })).toEqual({
+      indexed: ['skill:devops', 'subagent:devops'],
+      failed: [],
+      stoppedEarly: null,
+    });
+    const [row] = await pg.sql<{ dims: number }[]>`
+      select vector_dims(embedding) as dims from search.documents
+      where kind = 'subagent' and slug = 'devops'`;
+    expect(row?.dims).toBe(384);
+  });
+
+  it('marks a failed subagent embedding on the subagent document only', async () => {
+    await search.index.upsert({
+      kind: 'skill',
+      slug: 'x',
+      name: 'x',
+      description: 'x',
+      version: 1,
+      body: '',
+      folder: 'general',
+      embedding: null,
+    });
+    await search.index.upsert({
+      kind: 'subagent',
+      slug: 'x',
+      name: 'x',
+      description: 'x',
+      version: 1,
+      body: '',
+      folder: 'general',
+      embedding: null,
+    });
+    await search.index.markEmbedFailed('subagent', 'x');
+    expect(await search.index.slugsWithoutEmbedding(10)).toEqual([{ kind: 'skill', slug: 'x' }]);
+  });
+
+  it('subagent outbox events keep the subagent document in sync', async () => {
+    await addFolder('ops');
+    await addSkill('devops', 'Deploy skill');
+    await addSubagent('devops', 'Deploy agent', 'You deploy.');
+    await pg.sql`delete from search.documents where kind = 'subagent'`;
+    await drainOutbox();
+    expect(await kindsOf('devops')).toEqual(['skill', 'subagent']);
+    const archived = await archiveSubagent(catalog, { slug: 'devops', actorId: ACTOR });
+    if (!archived.ok) throw archived.error;
+    await drainOutbox();
+    expect(await kindsOf('devops')).toEqual(['skill']);
   });
 });
