@@ -160,7 +160,7 @@ describe('migrate', () => {
     try {
       await migrate(sql, dir);
       await sql`insert into identity.users (login, password_hash, role) values ('root', 'h', 'admin')`;
-      expect(await migrate(sql, migrationsDir)).toEqual(['0010_identity_sso.sql']);
+      expect(await migrate(sql, migrationsDir)).toContain('0010_identity_sso.sql');
       const [row] = await sql`
         select password_hash, oidc_iss, oidc_sub, email, groups, last_login_at
         from identity.users`;

@@ -95,7 +95,7 @@ async function devops(status: 'active' | 'archived' = 'active') {
   await folders.save(folder);
   if (status === 'archived') {
     folder.archive(NOW);
-    await folders.archiveWithSkills(folder, []);
+    await folders.archiveWithSkills(folder, [], []);
   }
   return folder;
 }

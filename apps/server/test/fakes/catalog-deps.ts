@@ -4,6 +4,7 @@ import { Slug } from '../../src/modules/catalog/domain/slug.ts';
 import { FixedClock } from './fixed-clock.ts';
 import { InMemoryFolderRepository } from './in-memory-folder-repository.ts';
 import { InMemorySkillRepository } from './in-memory-skill-repository.ts';
+import { InMemorySubagentRepository } from './in-memory-subagent-repository.ts';
 import { SeqIds } from './seq-ids.ts';
 import { shaHasher } from './sha-hasher.ts';
 
@@ -21,11 +22,13 @@ export function makeCatalogDeps(): {
   deps: CatalogDeps;
   skills: InMemorySkillRepository;
   folders: InMemoryFolderRepository;
+  subagents: InMemorySubagentRepository;
   audit: Audited[];
   clock: FixedClock;
 } {
   const skills = new InMemorySkillRepository();
-  const folders = new InMemoryFolderRepository(skills);
+  const subagents = new InMemorySubagentRepository();
+  const folders = new InMemoryFolderRepository(skills, subagents);
   const audit: Audited[] = [];
   const clock = new FixedClock();
   const slug = Slug.parse('general');
@@ -42,6 +45,7 @@ export function makeCatalogDeps(): {
   const deps: CatalogDeps = {
     skills,
     folders,
+    subagents,
     blobs: skills,
     hasher: shaHasher,
     ids: new SeqIds(),
@@ -52,5 +56,5 @@ export function makeCatalogDeps(): {
       },
     },
   };
-  return { deps, skills, folders, audit, clock };
+  return { deps, skills, folders, subagents, audit, clock };
 }

@@ -2,6 +2,8 @@ import type { ContentHash } from '../domain/content-hash.ts';
 import type { Folder, FolderStatus } from '../domain/folder.ts';
 import type { Skill, SkillStatus, SkillVersion } from '../domain/skill.ts';
 import type { Slug } from '../domain/slug.ts';
+import type { SubagentModel } from '../domain/subagent-md.ts';
+import type { Subagent, SubagentStatus, SubagentVersion } from '../domain/subagent.ts';
 
 /** A folder as a skill shows it: its slug and current name. */
 export type FolderRef = { slug: string; name: string };
@@ -20,6 +22,25 @@ export type SkillSummary = {
 
 /** `folder` is a folder slug; null means every folder. */
 export type SkillListFilter = { status: SkillStatus | 'all'; folder: string | null };
+
+/** One row of the subagent list: the subagent and its current version's frontmatter. */
+export type SubagentSummary = {
+  slug: string;
+  name: string;
+  description: string;
+  status: SubagentStatus;
+  version: number;
+  /** The subagent row's last change: a new version, archive, restore or move. */
+  updatedAt: Date;
+  folder: FolderRef;
+  model: SubagentModel;
+  /** null: inherit every tool. */
+  tools: string[] | null;
+  skills: string[];
+};
+
+/** `folder` is a folder slug; null means every folder. */
+export type SubagentListFilter = { status: SubagentStatus | 'all'; folder: string | null };
 
 /** One row of the folder list, with the number of skills in it. */
 export type FolderSummary = {
@@ -48,6 +69,25 @@ export interface SkillRepository {
   save(skill: Skill, blobs: Map<string, Uint8Array>): Promise<void>;
 }
 
+export interface SubagentRepository {
+  findBySlug(slug: Slug): Promise<Subagent | null>;
+  findById(id: string): Promise<Subagent | null>;
+  getVersion(subagentId: string, n: number): Promise<SubagentVersion | null>;
+  listVersions(subagentId: string): Promise<SubagentVersion[]>;
+  /** Summaries ordered by slug, in a single query (joined with folders); never loads blobs. */
+  listSummaries(filter: SubagentListFilter): Promise<SubagentSummary[]>;
+  listActiveInFolder(folderId: string): Promise<Subagent[]>;
+  /** Slugs of the active subagents whose latest version lists the skill, ordered by slug. */
+  usedBy(skillSlug: string): Promise<string[]>;
+  /**
+   * Same contract as SkillRepository.save: one transaction, drains the aggregate's events into the
+   * outbox, CAS on version/status/folder (version_conflict), a taken slug throws subagent_exists,
+   * and an active subagent that is created, restored or moved locks its folder row `for share`
+   * (folder_not_found / folder_archived). `blobs` holds the SUBAGENT.md of a new version.
+   */
+  save(subagent: Subagent, blobs: Map<string, Uint8Array>): Promise<void>;
+}
+
 export interface FolderRepository {
   findBySlug(slug: Slug): Promise<Folder | null>;
   findById(id: string): Promise<Folder | null>;
@@ -61,12 +101,13 @@ export interface FolderRepository {
    */
   save(folder: Folder, loadedStatus?: FolderStatus): Promise<void>;
   /**
-   * One transaction: locks the folder row `for update` (it must still be active) and the ids of its
-   * active skills `for update`, which must equal the ids of `skills`, else CatalogError
-   * version_conflict. Writes the folder and the skills (CAS on status and current version) and
-   * appends every skill's events to the outbox.
+   * One transaction: locks the folder row `for update` (it must still be active), then the ids of
+   * its active skills and of its active subagents `for update`, which must equal the ids of
+   * `skills` and of `subagents`, else CatalogError version_conflict. Writes the folder, the skills
+   * and the subagents (CAS on status and current version) and appends all their events to the
+   * outbox.
    */
-  archiveWithSkills(folder: Folder, skills: Skill[]): Promise<void>;
+  archiveWithSkills(folder: Folder, skills: Skill[], subagents: Subagent[]): Promise<void>;
 }
 
 export interface BlobStore {

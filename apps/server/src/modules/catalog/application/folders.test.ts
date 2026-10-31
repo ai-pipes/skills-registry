@@ -234,12 +234,12 @@ const flaky = (failures: number): FolderRepository => {
     findById: (i) => folders.findById(i),
     list: (s) => folders.list(s),
     save: (f) => folders.save(f),
-    archiveWithSkills: async (f, s) => {
+    archiveWithSkills: async (f, s, a) => {
       if (left > 0) {
         left -= 1;
         throw new CatalogError('version_conflict', 'concurrent');
       }
-      return folders.archiveWithSkills(f, s);
+      return folders.archiveWithSkills(f, s, a);
     },
   };
 };
@@ -351,12 +351,12 @@ describe('archiveFolder / restoreFolder', () => {
     let raced = false;
     const racing: FolderRepository = {
       ...flaky(0),
-      archiveWithSkills: async (f, s) => {
+      archiveWithSkills: async (f, s, a) => {
         if (!raced) {
           raced = true;
           await create('late', 'devops');
         }
-        return folders.archiveWithSkills(f, s);
+        return folders.archiveWithSkills(f, s, a);
       },
     };
     const r = await archiveFolder({ ...deps, folders: racing }, { slug: 'devops', actorId: 'u' });
