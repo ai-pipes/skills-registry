@@ -62,7 +62,7 @@ describe('FoldersPage', () => {
       http.get('/api/skills', () => HttpResponse.json([])),
       http.post('/api/folders/general/archive', () => {
         called = true;
-        return HttpResponse.json({ archivedSkills: 1 });
+        return HttpResponse.json({ archivedSkills: 1, archivedSubagents: 0 });
       }),
     );
     const { user } = renderWithApp(routes, { route: '/folders' });

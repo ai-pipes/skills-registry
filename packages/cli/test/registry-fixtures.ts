@@ -53,6 +53,7 @@ export function skillView(slug: string, over: Record<string, unknown> = {}) {
     files: [],
     source: null,
     sourceCommit: null,
+    usedBy: [],
     skillMdSha256: '0'.repeat(64),
     ...over,
   };

@@ -100,6 +100,8 @@ export const SkillView = SkillSummary.extend({
   source: SkillSource.nullable(),
   /** The upstream commit of the shown version; null when it was not taken from upstream. */
   sourceCommit: z.string().nullable(),
+  /** Slugs of active subagents whose latest version lists this skill. */
+  usedBy: z.array(z.string()),
 });
 export type SkillView = z.infer<typeof SkillView>;
 

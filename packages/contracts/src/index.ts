@@ -37,6 +37,19 @@ export {
   VersionRef,
   VersionSummary,
 } from './skills.ts';
+export {
+  BUILTIN_TOOL_PATTERN,
+  CreateSubagentRequest,
+  ListSubagentsQuery,
+  MAX_SUBAGENT_MD_BYTES,
+  MCP_TOOL_PATTERN,
+  PublishSubagentRequest,
+  SubagentDiff,
+  SubagentModel,
+  SubagentSummary,
+  SubagentVersionSummary,
+  SubagentView,
+} from './subagents.ts';
 export { CreatedToken, CreateTokenRequest, TokenSummary } from './tokens.ts';
 export {
   CreateUserRequest,

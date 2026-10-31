@@ -162,9 +162,10 @@ describe('folders API', () => {
     expect((await createSkillIn('deploy', 'devops')).status).toBe(201);
     const first = await authed('POST', '/api/folders/devops/archive');
     expect(first.status).toBe(200);
-    expect(await first.json()).toEqual({ archivedSkills: 1 });
+    expect(await first.json()).toEqual({ archivedSkills: 1, archivedSubagents: 0 });
     expect(await (await authed('POST', '/api/folders/devops/archive')).json()).toEqual({
       archivedSkills: 0,
+      archivedSubagents: 0,
     });
     const restored = await authed('POST', '/api/folders/devops/restore');
     expect(restored.status).toBe(204);

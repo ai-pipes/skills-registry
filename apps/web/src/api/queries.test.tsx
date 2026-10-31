@@ -156,7 +156,9 @@ describe('folder queries and mutations', () => {
         skillRequests += 1;
         return HttpResponse.json([skillSummary]);
       }),
-      http.post('/api/folders/devops/archive', () => HttpResponse.json({ archivedSkills: 3 })),
+      http.post('/api/folders/devops/archive', () =>
+        HttpResponse.json({ archivedSkills: 3, archivedSubagents: 0 }),
+      ),
     );
     const h = renderHook(
       () => ({
@@ -168,7 +170,9 @@ describe('folder queries and mutations', () => {
     await waitFor(() => expect(h.result.current.skills.data).toBeDefined());
     expect(skillRequests).toBe(1);
     h.result.current.archive.mutate();
-    await waitFor(() => expect(h.result.current.archive.data).toEqual({ archivedSkills: 3 }));
+    await waitFor(() =>
+      expect(h.result.current.archive.data).toEqual({ archivedSkills: 3, archivedSubagents: 0 }),
+    );
     await waitFor(() => expect(skillRequests).toBe(2));
   });
 });

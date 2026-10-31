@@ -16,6 +16,7 @@ const v4: SkillView = {
   version: 4,
   source: null,
   sourceCommit: null,
+  usedBy: [],
   skillMdSha256: '0'.repeat(64),
   skillMd: SKILL_MD,
   // As the server sends it: SKILL.md is not in `files`, its text is `skillMd`.
