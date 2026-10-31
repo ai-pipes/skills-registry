@@ -115,6 +115,10 @@ describe('renderSubagent', () => {
     expect(out).toContain('`old-archived`');
   });
 
+  it('throws on an invalid MCP server name', () => {
+    expect(() => renderSubagent(view(), 'a b')).toThrow(/^invalid MCP server name "a b"/);
+  });
+
   it.each([
     ['tool', { tools: ['bash'] }],
     ['MCP tool', { tools: ['mcp__a'] }],

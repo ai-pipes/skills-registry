@@ -1,6 +1,7 @@
 import type { SubagentView } from '@skills/contracts';
 import { BUILTIN_TOOL_PATTERN, MCP_TOOL_PATTERN, SubagentModel } from '@skills/contracts';
 import { stringify } from 'yaml';
+import { MCP_SERVER_RE } from './installed.ts';
 
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 // The same shape the server stores (domain/frontmatter.ts); the body is what follows the block.
@@ -11,6 +12,7 @@ const invalid = (why: string) => new Error(`invalid subagent from the registry: 
 /** The `.claude/agents/<slug>.md` text for a registry subagent (spec §11.2). */
 export function renderSubagent(v: SubagentView, mcpServer: string): string {
   if (!SLUG.test(v.slug)) throw invalid(`slug "${v.slug}"`);
+  if (!MCP_SERVER_RE.test(mcpServer)) throw new Error(`invalid MCP server name "${mcpServer}"`);
   const model = SubagentModel.safeParse(v.model);
   if (!model.success) throw invalid(`model "${v.model}"`);
   for (const t of v.tools ?? []) {
