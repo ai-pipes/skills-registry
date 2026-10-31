@@ -4,19 +4,23 @@ import { Folder } from '../../src/modules/catalog/domain/folder.ts';
 import { SkillManifest } from '../../src/modules/catalog/domain/manifest.ts';
 import { Skill } from '../../src/modules/catalog/domain/skill.ts';
 import { Slug } from '../../src/modules/catalog/domain/slug.ts';
+import { Subagent } from '../../src/modules/catalog/domain/subagent.ts';
 import { FilePath } from '../../src/modules/catalog/domain/file-path.ts';
 import { nodeHasher } from '../../src/modules/catalog/infrastructure/node-hasher.ts';
 import { PgFolderRepository } from '../../src/modules/catalog/infrastructure/pg-folder-repository.ts';
 import { PgSkillRepository } from '../../src/modules/catalog/infrastructure/pg-skill-repository.ts';
+import { PgSubagentRepository } from '../../src/modules/catalog/infrastructure/pg-subagent-repository.ts';
 import { GENERAL_FOLDER_ID, startPg, truncateAll } from '../pg.ts';
 
 let pg: Awaited<ReturnType<typeof startPg>>;
 let folders: PgFolderRepository;
 let skills: PgSkillRepository;
+let subagents: PgSubagentRepository;
 beforeAll(async () => {
   pg = await startPg();
   folders = new PgFolderRepository(pg.sql);
   skills = new PgSkillRepository(pg.sql);
+  subagents = new PgSubagentRepository(pg.sql);
 });
 afterAll(async () => {
   await pg.stop();
@@ -62,6 +66,31 @@ async function newSkill(s: string, folderId: string) {
   );
   await skills.save(skill, new Map([[hash.value, bytes]]));
   return skill;
+}
+
+function newSubagent(s: string, folderId: string) {
+  const bytes = new TextEncoder().encode(`---\nname: ${s}\n---\n`);
+  const hash = nodeHasher.sha256(bytes);
+  const subagent = unwrap(
+    Subagent.create({
+      id: randomUUID(),
+      slug: slug(s),
+      folderId,
+      md: { name: s, description: 'd', tools: null, model: 'inherit', skills: [], body: '' },
+      contentHash: hash,
+      size: bytes.byteLength,
+      authorId: randomUUID(),
+      message: null,
+      now: NOW,
+    }),
+  );
+  return { subagent, blobs: new Map([[hash.value, bytes]]) };
+}
+
+async function savedSubagent(s: string, folderId: string) {
+  const { subagent, blobs } = newSubagent(s, folderId);
+  await subagents.save(subagent, blobs);
+  return subagent;
 }
 
 describe('PgFolderRepository', () => {
@@ -117,7 +146,7 @@ describe('PgFolderRepository', () => {
     const active = await skills.listActiveInFolder(f.id);
     toArchive.archive(NOW);
     for (const s of active) s.archive('u', NOW);
-    await folders.archiveWithSkills(toArchive, active);
+    await folders.archiveWithSkills(toArchive, active, []);
 
     unwrap(stale.edit({ name: 'Renamed', description: 'about devops', now: NOW }));
     await expect(folders.save(stale)).rejects.toMatchObject({ code: 'version_conflict' });
@@ -144,7 +173,7 @@ describe('PgFolderRepository', () => {
     loaded.archive('u', NOW);
     await skills.save(loaded, new Map());
     beta.archive(NOW);
-    await folders.archiveWithSkills(beta, []);
+    await folders.archiveWithSkills(beta, [], []);
 
     let queries = 0;
     const counting = new Proxy(pg.sql, {
@@ -173,7 +202,7 @@ describe('PgFolderRepository', () => {
     const active = await skills.listActiveInFolder(f.id);
     f.archive(NOW);
     for (const s of active) s.archive('u', NOW);
-    await folders.archiveWithSkills(f, active);
+    await folders.archiveWithSkills(f, active, []);
     const rows = await pg.sql`select status from catalog.skills`;
     expect(rows.map((r) => r.status)).toEqual(['archived', 'archived']);
     expect((await folders.findById(f.id))?.status).toBe('archived');
@@ -181,7 +210,7 @@ describe('PgFolderRepository', () => {
       where type = 'catalog.skill_archived'`;
     expect(archived).toHaveLength(2);
     // Already archived: a second archive is a conflict, not a silent rewrite.
-    await expect(folders.archiveWithSkills(f, [])).rejects.toMatchObject({
+    await expect(folders.archiveWithSkills(f, [], [])).rejects.toMatchObject({
       code: 'version_conflict',
     });
   });
@@ -195,7 +224,7 @@ describe('PgFolderRepository', () => {
     const outbox = (await pg.sql`select 1 from platform.outbox`).length;
     f.archive(NOW);
     for (const s of read) s.archive('u', NOW);
-    await expect(folders.archiveWithSkills(f, read)).rejects.toMatchObject({
+    await expect(folders.archiveWithSkills(f, read, [])).rejects.toMatchObject({
       code: 'version_conflict',
     });
     expect((await folders.findById(f.id))?.status).toBe('active');
@@ -236,9 +265,80 @@ describe('PgFolderRepository', () => {
     await skills.save(winner, new Map([[hash.value, bytes]]));
     f.archive(NOW);
     read!.archive('u', NOW);
-    await expect(folders.archiveWithSkills(f, [read!])).rejects.toMatchObject({
+    await expect(folders.archiveWithSkills(f, [read!], [])).rejects.toMatchObject({
       code: 'version_conflict',
     });
     expect((await folders.findById(f.id))?.status).toBe('active');
   });
+
+  it('archives the active subagents of the folder together with its skills', async () => {
+    const f = newFolder('devops');
+    await folders.save(f);
+    await newSkill('a', f.id);
+    const agent = await savedSubagent('reviewer', f.id);
+    await savedSubagent('elsewhere', GENERAL_FOLDER_ID);
+    const activeSkills = await skills.listActiveInFolder(f.id);
+    const activeSubagents = await subagents.listActiveInFolder(f.id);
+    f.archive(NOW);
+    for (const s of activeSkills) s.archive('u', NOW);
+    for (const s of activeSubagents) s.archive(NOW);
+    await folders.archiveWithSkills(f, activeSkills, activeSubagents);
+
+    const rows = await pg.sql`select slug, status from catalog.subagents order by slug`;
+    expect(rows.map((r) => [r.slug, r.status])).toEqual([
+      ['elsewhere', 'active'],
+      ['reviewer', 'archived'],
+    ]);
+    expect((await skills.findById(activeSkills[0]!.id))?.status).toBe('archived');
+    const archived = await pg.sql`select payload from platform.outbox
+      where type = 'catalog.subagent_archived'`;
+    expect(archived.map((r) => r.payload)).toEqual([{ subagentId: agent.id, slug: 'reviewer' }]);
+  });
+
+  it('refuses a subagent created between listing and archiving; writes nothing', async () => {
+    const f = newFolder('devops');
+    await folders.save(f);
+    await newSkill('a', f.id);
+    const activeSkills = await skills.listActiveInFolder(f.id);
+    const read = await subagents.listActiveInFolder(f.id);
+    await savedSubagent('late', f.id);
+    const outbox = (await pg.sql`select 1 from platform.outbox`).length;
+    f.archive(NOW);
+    for (const s of activeSkills) s.archive('u', NOW);
+    await expect(folders.archiveWithSkills(f, activeSkills, read)).rejects.toMatchObject({
+      code: 'version_conflict',
+    });
+    expect((await folders.findById(f.id))?.status).toBe('active');
+    expect((await pg.sql`select status from catalog.skills`).map((r) => r.status)).toEqual([
+      'active',
+    ]);
+    expect(await pg.sql`select 1 from platform.outbox`).toHaveLength(outbox);
+  });
+
+  it('a subagent created while an archive holds the folder lock ends as folder_archived', async () => {
+    const f = newFolder('devops');
+    await folders.save(f);
+    const { subagent, blobs } = newSubagent('late', f.id);
+    let creating: Promise<void> | undefined;
+    // The archive's own first step, held open: the folder row `for update`.
+    await pg.sql.begin(async (tx) => {
+      await tx`select status from catalog.folders where id = ${f.id} for update`;
+      creating = subagents.save(subagent, blobs);
+      creating.catch(() => undefined);
+      await waitForLockWaiter();
+      await tx`update catalog.folders set status = 'archived' where id = ${f.id}`;
+    });
+    await expect(creating).rejects.toMatchObject({ code: 'folder_archived' });
+    expect(await pg.sql`select 1 from catalog.subagents`).toHaveLength(0);
+  });
 });
+
+/** Resolves once some backend is waiting on a row lock (the save blocked behind `for update`). */
+async function waitForLockWaiter(attemptsLeft = 200): Promise<void> {
+  const [row] = await pg.sql<{ n: number }[]>`
+    select count(*)::int as n from pg_stat_activity where wait_event_type = 'Lock'`;
+  if (row!.n > 0) return;
+  if (attemptsLeft === 0) throw new Error('the save never waited for the folder lock');
+  await new Promise((r) => setTimeout(r, 25));
+  await waitForLockWaiter(attemptsLeft - 1);
+}

@@ -1,9 +1,17 @@
 import type { AuditLog, Clock } from '../../../shared-kernel/index.ts';
-import type { BlobStore, FolderRepository, Hasher, IdGenerator, SkillRepository } from './ports.ts';
+import type {
+  BlobStore,
+  FolderRepository,
+  Hasher,
+  IdGenerator,
+  SkillRepository,
+  SubagentRepository,
+} from './ports.ts';
 
 export type CatalogDeps = {
   skills: SkillRepository;
   folders: FolderRepository;
+  subagents: SubagentRepository;
   blobs: BlobStore;
   hasher: Hasher;
   ids: IdGenerator;

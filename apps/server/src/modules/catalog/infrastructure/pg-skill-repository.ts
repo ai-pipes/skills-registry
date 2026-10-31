@@ -224,7 +224,8 @@ export async function writeSkill(
   await appendOutbox(tx, events);
 }
 
-async function lockFolder(tx: Tx, folderId: string): Promise<void> {
+/** Locks the folder row `for share`; it must exist and be active. Shared with subagents. */
+export async function lockFolder(tx: Tx, folderId: string): Promise<void> {
   const [folder] = await tx<{ slug: string; status: string }[]>`
     select slug, status from catalog.folders where id = ${folderId} for share`;
   if (!folder) throw new CatalogError('folder_not_found', `folder ${folderId} not found`);

@@ -3,6 +3,7 @@ import type { CatalogDeps } from './application/deps.ts';
 import { PgBlobStore } from './infrastructure/pg-blob-store.ts';
 import { PgFolderRepository } from './infrastructure/pg-folder-repository.ts';
 import { PgSkillRepository } from './infrastructure/pg-skill-repository.ts';
+import { PgSubagentRepository } from './infrastructure/pg-subagent-repository.ts';
 
 export { archiveSkill, restoreSkill } from './application/commands/archive.ts';
 export { createSkill } from './application/commands/create-skill.ts';
@@ -27,10 +28,13 @@ export { listSkills, type SkillSummary } from './application/queries/list-skills
 export { CatalogError, type CatalogErrorCode } from './domain/errors.ts';
 export { nodeHasher } from './infrastructure/node-hasher.ts';
 
-export function createPgCatalog(sql: Sql): Pick<CatalogDeps, 'skills' | 'blobs' | 'folders'> {
+export function createPgCatalog(
+  sql: Sql,
+): Pick<CatalogDeps, 'skills' | 'blobs' | 'folders' | 'subagents'> {
   return {
     skills: new PgSkillRepository(sql),
     blobs: new PgBlobStore(sql),
     folders: new PgFolderRepository(sql),
+    subagents: new PgSubagentRepository(sql),
   };
 }

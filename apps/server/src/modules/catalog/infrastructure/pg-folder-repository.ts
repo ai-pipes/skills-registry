@@ -5,7 +5,9 @@ import { CatalogError } from '../domain/errors.ts';
 import { Folder, type FolderStatus } from '../domain/folder.ts';
 import type { Skill } from '../domain/skill.ts';
 import { Slug } from '../domain/slug.ts';
+import type { Subagent } from '../domain/subagent.ts';
 import { writeSkill } from './pg-skill-repository.ts';
+import { writeSubagent } from './pg-subagent-repository.ts';
 
 interface FolderRow {
   id: string;
@@ -90,18 +92,20 @@ export class PgFolderRepository implements FolderRepository {
     }
   }
 
-  async archiveWithSkills(folder: Folder, skills: Skill[]): Promise<void> {
+  async archiveWithSkills(folder: Folder, skills: Skill[], subagents: Subagent[]): Promise<void> {
     await this.sql.begin(async (tx) => {
       // Waits for writes holding the folder `for share` (create, move, restore into it).
       const [row] = await tx<{ status: FolderStatus }[]>`
         select status from catalog.folders where id = ${folder.id} for update`;
       if (row?.status !== 'active') throw conflict(folder);
-      const active = await tx<{ id: string }[]>`
+      const activeSkills = await tx<{ id: string }[]>`
         select id from catalog.skills
         where folder_id = ${folder.id} and status = 'active' for update`;
-      const expected = active.map((r) => r.id).toSorted();
-      const given = skills.map((s) => s.id).toSorted();
-      if (expected.join() !== given.join()) throw conflict(folder);
+      if (!sameIds(activeSkills, skills)) throw conflict(folder);
+      const activeSubagents = await tx<{ id: string }[]>`
+        select id from catalog.subagents
+        where folder_id = ${folder.id} and status = 'active' for update`;
+      if (!sameIds(activeSubagents, subagents)) throw conflict(folder);
       await tx`update catalog.folders set status = ${folder.status}, updated_at = ${folder.updatedAt}
         where id = ${folder.id}`;
       // Sequential: one transaction runs one statement at a time.
@@ -109,8 +113,25 @@ export class PgFolderRepository implements FolderRepository {
         await prev;
         await writeSkill(tx, skill, new Map());
       }, Promise.resolve());
+      await subagents.reduce(async (prev, subagent) => {
+        await prev;
+        await writeSubagent(tx, subagent, new Map());
+      }, Promise.resolve());
     });
   }
+}
+
+function sameIds(locked: { id: string }[], given: { id: string }[]): boolean {
+  return (
+    locked
+      .map((r) => r.id)
+      .toSorted()
+      .join() ===
+    given
+      .map((g) => g.id)
+      .toSorted()
+      .join()
+  );
 }
 
 function hydrate(row: FolderRow): Folder {

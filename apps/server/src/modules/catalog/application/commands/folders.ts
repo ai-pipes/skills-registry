@@ -115,7 +115,7 @@ async function archiveAttempt(
   const now = deps.clock.now();
   folder.value.archive(now);
   for (const skill of skills) skill.archive(cmd.actorId, now);
-  const saved = await write(() => deps.folders.archiveWithSkills(folder.value, skills));
+  const saved = await write(() => deps.folders.archiveWithSkills(folder.value, skills, []));
   if (!saved.ok) {
     if (saved.error.code === 'version_conflict' && attemptsLeft > 1) {
       return archiveAttempt(deps, cmd, attemptsLeft - 1);
