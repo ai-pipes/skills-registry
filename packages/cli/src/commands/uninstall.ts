@@ -55,7 +55,7 @@ async function uninstallOne(
  */
 export const uninstallCommand: Command = async (args, env) => {
   const { values, positionals } = parse(args, options, { min: 1, max: Infinity });
-  const slugs = positionals.map(checkSlug);
+  const slugs = positionals.map((p) => checkSlug(p));
   const agents = values.agent === undefined ? AGENTS : selectAgents(values.agent, env);
   const o = { global: values.global ?? false, dir: values.dir };
   const results = await inSequence(slugs, (slug) => uninstallOne(env, slug, agents, o));

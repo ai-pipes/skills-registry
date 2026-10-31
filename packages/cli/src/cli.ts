@@ -4,6 +4,7 @@ import { installCommand } from './commands/install.ts';
 import { listCommand } from './commands/list.ts';
 import { loginCommand } from './commands/login.ts';
 import { logoutCommand } from './commands/logout.ts';
+import { subagentCommand, SUBAGENT_USAGE } from './commands/subagent.ts';
 import { searchCommand } from './commands/search.ts';
 import { uninstallCommand } from './commands/uninstall.ts';
 import { updateCommand } from './commands/update.ts';
@@ -26,6 +27,8 @@ const USAGE = `usage: skills-registry <command> [options]
   uninstall <slug>... [-g] [-a <agent>]... [--dir <path>]
                                   remove installed skills
 
+${SUBAGENT_USAGE}
+
   <source>: owner/repo or https://github.com/owner/repo[/tree/<ref>/<path>]
 
 environment:
@@ -42,6 +45,7 @@ const COMMANDS: Record<string, Command> = {
   update: updateCommand,
   install: installCommand,
   uninstall: uninstallCommand,
+  subagent: subagentCommand,
 };
 
 /** Runs one command. Exit codes: 0 success, 1 the operation failed, 2 wrong invocation. */

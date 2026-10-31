@@ -67,7 +67,7 @@ describe('writeSubagentFile', () => {
     await writeSubagentFile(dir, 'devops', 'hello');
     expect(await readFile(join(dir, 'devops.md'), 'utf8')).toBe('hello');
     expect(readdirSync(dir)).toEqual(['devops.md']);
-    await expect(writeSubagentFile(dir, '../evil', 'x')).rejects.toThrow(/invalid skill slug/);
+    await expect(writeSubagentFile(dir, '../evil', 'x')).rejects.toThrow(/invalid subagent slug/);
   });
 });
 

@@ -23,9 +23,9 @@ const DOWNLOADS = 8;
 
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-/** A kebab-case slug (it becomes a directory name); anything else is a usage error. */
-export function checkSlug(slug: string): string {
-  if (!SLUG.test(slug)) throw new UsageError(`invalid skill slug "${slug}"`);
+/** A kebab-case slug (it becomes a file or directory name); anything else is a usage error. */
+export function checkSlug(slug: string, noun = 'skill'): string {
+  if (!SLUG.test(slug)) throw new UsageError(`invalid ${noun} slug "${slug}"`);
   return slug;
 }
 

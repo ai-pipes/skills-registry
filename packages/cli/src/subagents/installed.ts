@@ -58,7 +58,7 @@ export function writeInstalled(dir: string, m: InstalledManifest): Promise<void>
 }
 
 export async function writeSubagentFile(dir: string, slug: string, text: string): Promise<void> {
-  await writeAtomic(dir, `${checkSlug(slug)}.md`, text);
+  await writeAtomic(dir, `${checkSlug(slug, 'subagent')}.md`, text);
 }
 
 /** Ours: an entry from `server` whose sha256 equals the file's. Anything else there is foreign. */
@@ -70,7 +70,7 @@ export async function inspectSubagent(
 ): Promise<'absent' | 'foreign' | InstalledEntry> {
   let bytes: Buffer;
   try {
-    bytes = await readFile(join(dir, `${checkSlug(slug)}.md`));
+    bytes = await readFile(join(dir, `${checkSlug(slug, 'subagent')}.md`));
   } catch (e) {
     if (isNotFound(e)) return 'absent';
     throw e;

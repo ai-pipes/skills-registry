@@ -31,6 +31,9 @@ const repoTarball = (skillMd: string, run: string) =>
     { path: 'README.md', content: 'repo readme\n' },
   ]);
 
+const subagentMd = (tools: string) =>
+  `---\nname: devops\ndescription: Infra work\ntools: ${tools}\n---\nYou are the DevOps engineer.\n`;
+
 let pg: Awaited<ReturnType<typeof startPg>>;
 let app: Hono<AppEnv>;
 let session: string;
@@ -187,5 +190,64 @@ describe('client CLI against the real server and a fake GitHub', () => {
     expect(await run('uninstall', 'demo', '-a', 'claude-code'), env.stderr.join('\n')).toBe(0);
     expect(readdirSync(join(env.cwd, '.claude/skills'))).toEqual([]);
     expect(readdirSync(join(env.cwd, '.agents/skills'))).toEqual([]);
+  });
+
+  it('subagent install → new version with other tools → update is gated → update --yes', async () => {
+    const { token } = CreatedToken.parse(
+      await (await ui('POST', '/api/tokens', { name: 'cli' })).json(),
+    );
+    expect(
+      (await ui('POST', '/api/folders', { slug: 'eng', name: 'Eng', description: 'e' })).status,
+    ).toBe(201);
+    expect(
+      (
+        await ui('POST', '/api/subagents', {
+          slug: 'devops',
+          folder: 'eng',
+          content: subagentMd('[Read, Bash]'),
+        })
+      ).status,
+    ).toBe(201);
+
+    const env = fakeEnv({
+      fetch: (input, init) => {
+        const req = new Request(input, init);
+        return Promise.resolve(
+          app.request(req.url.slice(ORIGIN.length), { method: req.method, headers: req.headers }),
+        );
+      },
+      vars: { SKILLS_REGISTRY_URL: ORIGIN, SKILLS_REGISTRY_TOKEN: token },
+    });
+    const run = async (...argv: string[]) => {
+      env.stdout.length = 0;
+      env.stderr.length = 0;
+      return runCli(argv, env);
+    };
+    const file = join(env.cwd, '.claude/agents/devops.md');
+
+    expect(await run('subagent', 'install', 'devops', '-a', 'claude-code')).toBe(0);
+    expect(env.stdout[0]).toContain('installed devops v1 (model inherit; tools Read, Bash');
+    expect(readFileSync(file, 'utf8')).toContain('tools: Read, Bash');
+
+    const published = await ui('PUT', '/api/subagents/devops', {
+      baseVersion: 1,
+      content: subagentMd('[Read, Write]'),
+    });
+    expect(published.status).toBe(200);
+
+    expect(await run('subagent', 'update')).toBe(1);
+    expect(env.stderr.join('\n')).toContain(
+      'permissions changed for devops: +Write -Bash; rerun with --yes to apply',
+    );
+    expect(readFileSync(file, 'utf8')).toContain('tools: Read, Bash');
+
+    expect(await run('subagent', 'update', '--yes'), env.stderr.join('\n')).toBe(0);
+    expect(env.stdout).toEqual(['updated devops v1 → v2 (tools)']);
+    expect(readFileSync(file, 'utf8')).toContain('tools: Read, Write');
+
+    expect(await run('subagent', 'list', '--installed')).toBe(0);
+    expect(env.stdout).toEqual(['devops\tv2\tv2\tok']);
+    expect(await run('subagent', 'uninstall', 'devops')).toBe(2);
+    expect(await run('subagent', 'uninstall', 'devops', '-a', 'claude-code')).toBe(0);
   });
 });
