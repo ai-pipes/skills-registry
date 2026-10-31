@@ -1,102 +1,26 @@
 import { useState } from 'react';
-import {
-  ArchiveIcon,
-  FolderInputIcon,
-  ArchiveRestoreIcon,
-  HistoryIcon,
-  PencilIcon,
-} from 'lucide-react';
-import type { FolderRef, SkillSource } from '@skills/contracts';
+import { FolderInputIcon, HistoryIcon, PencilIcon } from 'lucide-react';
+import type { SkillSource } from '@skills/contracts';
 import { Link, useParams, useSearchParams } from 'react-router';
-import { notify } from '@/lib/notify.ts';
 import { isApiError } from '@/api/errors.ts';
-import { useFolders, useSetArchived, useSkill } from '@/api/queries.ts';
-import { ConfirmDialog } from '@/components/ConfirmDialog.tsx';
+import { useSkill } from '@/api/queries.ts';
 import { EmptyState } from '@/components/EmptyState.tsx';
 import { ErrorAlert } from '@/components/ErrorAlert.tsx';
+import { PageSkeleton } from '@/components/PageSkeleton.tsx';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { withoutFrontMatter } from '@/lib/frontMatter.ts';
 import { formatDateTime, formatRelative } from '@/lib/format.ts';
+import { parseVersion } from '@/lib/versionParam.ts';
 import { strings } from '@/strings.ts';
+import { ArchiveButton } from './ArchiveButton.tsx';
 import { FileTree } from './FileTree.tsx';
 import { FileView } from './FileView.tsx';
 import { Markdown } from './Markdown.tsx';
 import { MoveSkillDialog } from './MoveSkillDialog.tsx';
-import { RestoreSkillDialog } from './RestoreSkillDialog.tsx';
 import { githubUrl, shortSha, sourceLabel } from './source.ts';
 
 const SKILL_MD = 'SKILL.md';
-
-/** The YAML front matter is metadata (shown in the header), not part of the rendered text. */
-function withoutFrontMatter(md: string): string {
-  return md.replace(/^---\r?\n[\s\S]*?\r?\n---[ \t]*(\r?\n|$)/, '');
-}
-
-function parseVersion(raw: string | null): number | undefined {
-  if (raw === null || !/^[1-9]\d{0,9}$/.test(raw)) return undefined;
-  const n = Number(raw);
-  return n <= 2_147_483_647 ? n : undefined;
-}
-
-function ArchiveButton({
-  slug,
-  archived,
-  folder,
-}: {
-  slug: string;
-  archived: boolean;
-  folder: FolderRef;
-}) {
-  const setArchived = useSetArchived(slug);
-  const folders = useFolders('all');
-  const [choose, setChoose] = useState(false);
-  const folderArchived =
-    archived && folders.data?.find((f) => f.slug === folder.slug)?.status === 'archived';
-  const button = (
-    <Button
-      variant="outline"
-      disabled={archived && folders.isPending}
-      onClick={folderArchived ? () => setChoose(true) : undefined}
-    >
-      {archived ? <ArchiveRestoreIcon aria-hidden /> : <ArchiveIcon aria-hidden />}
-      {archived ? strings.skill.restore : strings.skill.archive}
-    </Button>
-  );
-  return (
-    <>
-      {folderArchived ? (
-        button
-      ) : (
-        <ConfirmDialog
-          trigger={button}
-          title={archived ? strings.skill.restoreTitle : strings.skill.archiveTitle}
-          description={
-            archived ? strings.skill.restoreDescription : strings.skill.archiveDescription
-          }
-          confirmLabel={archived ? strings.skill.restore : strings.skill.archive}
-          destructive={!archived}
-          onConfirm={async () => {
-            try {
-              await setArchived.mutateAsync(!archived);
-            } catch (e) {
-              // The folder was archived elsewhere: offer the choice instead of failing.
-              if (archived && isApiError(e) && e.code === 'folder_archived') {
-                setChoose(true);
-                return;
-              }
-              throw e;
-            }
-            notify.success(archived ? strings.skill.restored : strings.skill.archived);
-          }}
-        />
-      )}
-      {archived && choose && (
-        <RestoreSkillDialog slug={slug} folder={folder} open={choose} onOpenChange={setChoose} />
-      )}
-    </>
-  );
-}
 
 /** "Imported from owner/repo/path @ sha7": a GitHub link only when the source is safe to link. */
 function SourceLine({ source, commit }: { source: SkillSource; commit: string | null }) {
@@ -119,16 +43,6 @@ function SourceLine({ source, commit }: { source: SkillSource; commit: string | 
         </a>
       )}
     </p>
-  );
-}
-
-function PageSkeleton() {
-  return (
-    <div className="flex flex-col gap-4" aria-busy="true" aria-label={strings.common.loading}>
-      <Skeleton className="h-8 w-1/3" />
-      <Skeleton className="h-4 w-2/3" />
-      <Skeleton className="h-64 w-full" />
-    </div>
   );
 }
 

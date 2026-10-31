@@ -1,115 +1,21 @@
-import type { FolderRef } from '@skills/contracts';
-import {
-  ArchiveIcon,
-  ArchiveRestoreIcon,
-  FolderInputIcon,
-  HistoryIcon,
-  PencilIcon,
-} from 'lucide-react';
+import { FolderInputIcon, HistoryIcon, PencilIcon } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { isApiError } from '@/api/errors.ts';
-import { useArchiveSubagent, useFolders, useRestoreSubagent, useSubagent } from '@/api/queries.ts';
-import { ConfirmDialog } from '@/components/ConfirmDialog.tsx';
+import { useSubagent } from '@/api/queries.ts';
 import { CopyField } from '@/components/CopyField.tsx';
 import { EmptyState } from '@/components/EmptyState.tsx';
 import { ErrorAlert } from '@/components/ErrorAlert.tsx';
+import { PageSkeleton } from '@/components/PageSkeleton.tsx';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
 import { formatDateTime, formatRelative } from '@/lib/format.ts';
-import { notify } from '@/lib/notify.ts';
+import { withoutFrontMatter } from '@/lib/frontMatter.ts';
+import { parseVersion } from '@/lib/versionParam.ts';
 import { strings } from '@/strings.ts';
+import { ArchiveButton } from '@/skills/ArchiveButton.tsx';
 import { Markdown } from '@/skills/Markdown.tsx';
 import { MoveSkillDialog } from '@/skills/MoveSkillDialog.tsx';
-import { RestoreSkillDialog } from '@/skills/RestoreSkillDialog.tsx';
-
-/** The YAML front matter is metadata (shown in the header), not part of the rendered prompt. */
-function withoutFrontMatter(md: string): string {
-  return md.replace(/^---\r?\n[\s\S]*?\r?\n---[ \t]*(\r?\n|$)/, '');
-}
-
-function parseVersion(raw: string | null): number | undefined {
-  if (raw === null || !/^[1-9]\d{0,9}$/.test(raw)) return undefined;
-  const n = Number(raw);
-  return n <= 2_147_483_647 ? n : undefined;
-}
-
-function ArchiveButton({
-  slug,
-  archived,
-  folder,
-}: {
-  slug: string;
-  archived: boolean;
-  folder: FolderRef;
-}) {
-  const archive = useArchiveSubagent(slug);
-  const restore = useRestoreSubagent(slug);
-  const folders = useFolders('all');
-  const [choose, setChoose] = useState(false);
-  const folderArchived =
-    archived && folders.data?.find((f) => f.slug === folder.slug)?.status === 'archived';
-  const button = (
-    <Button
-      variant="outline"
-      disabled={archived && folders.isPending}
-      onClick={folderArchived ? () => setChoose(true) : undefined}
-    >
-      {archived ? <ArchiveRestoreIcon aria-hidden /> : <ArchiveIcon aria-hidden />}
-      {archived ? strings.subagent.restore : strings.subagent.archive}
-    </Button>
-  );
-  return (
-    <>
-      {folderArchived ? (
-        button
-      ) : (
-        <ConfirmDialog
-          trigger={button}
-          title={archived ? strings.subagent.restoreTitle : strings.subagent.archiveTitle}
-          description={
-            archived ? strings.subagent.restoreDescription : strings.subagent.archiveDescription
-          }
-          confirmLabel={archived ? strings.subagent.restore : strings.subagent.archive}
-          destructive={!archived}
-          onConfirm={async () => {
-            try {
-              await (archived ? restore.mutateAsync(undefined) : archive.mutateAsync());
-            } catch (e) {
-              // The folder was archived elsewhere: offer the choice instead of failing.
-              if (archived && isApiError(e) && e.code === 'folder_archived') {
-                setChoose(true);
-                return;
-              }
-              throw e;
-            }
-            notify.success(archived ? strings.subagent.restored : strings.subagent.archived);
-          }}
-        />
-      )}
-      {archived && choose && (
-        <RestoreSkillDialog
-          kind="subagent"
-          slug={slug}
-          folder={folder}
-          open={choose}
-          onOpenChange={setChoose}
-        />
-      )}
-    </>
-  );
-}
-
-function PageSkeleton() {
-  return (
-    <div className="flex flex-col gap-4" aria-busy="true" aria-label={strings.common.loading}>
-      <Skeleton className="h-8 w-1/3" />
-      <Skeleton className="h-4 w-2/3" />
-      <Skeleton className="h-64 w-full" />
-    </div>
-  );
-}
 
 /** `/subagents/:slug[?version=N]`: header with actions, model, tools, skills, the rendered prompt. */
 export function SubagentPage() {
@@ -177,7 +83,12 @@ export function SubagentPage() {
                 {strings.subagent.move}
               </Button>
             )}
-            <ArchiveButton slug={data.slug} archived={archived} folder={data.folder} />
+            <ArchiveButton
+              kind="subagent"
+              slug={data.slug}
+              archived={archived}
+              folder={data.folder}
+            />
           </div>
         </div>
         {data.description && <p className="text-muted-foreground">{data.description}</p>}
@@ -228,7 +139,7 @@ export function SubagentPage() {
         value={`skills-registry subagent install ${data.slug}`}
       />
       <section aria-label={strings.subagent.prompt} className="min-w-0">
-        <Markdown slug={data.slug} source={withoutFrontMatter(data.content)} />
+        <Markdown source={withoutFrontMatter(data.content)} />
       </section>
     </div>
   );
