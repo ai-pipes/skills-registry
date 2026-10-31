@@ -23,3 +23,23 @@ export const skillMoved = (
   p: { skillId: string; slug: string; folder: string },
   occurredAt: Date,
 ): DomainEvent => ({ type: 'catalog.skill_moved', occurredAt, payload: { ...p } });
+
+export const subagentVersionCreated = (
+  p: { subagentId: string; slug: string; version: number },
+  occurredAt: Date,
+): DomainEvent => ({ type: 'catalog.subagent_version_created', occurredAt, payload: { ...p } });
+
+export const subagentArchived = (
+  p: { subagentId: string; slug: string },
+  occurredAt: Date,
+): DomainEvent => ({ type: 'catalog.subagent_archived', occurredAt, payload: { ...p } });
+
+export const subagentRestored = (
+  p: { subagentId: string; slug: string },
+  occurredAt: Date,
+): DomainEvent => ({ type: 'catalog.subagent_restored', occurredAt, payload: { ...p } });
+
+export const subagentMoved = (
+  p: { subagentId: string; slug: string; folder: string },
+  occurredAt: Date,
+): DomainEvent => ({ type: 'catalog.subagent_moved', occurredAt, payload: { ...p } });
