@@ -66,7 +66,7 @@ function skillRelativePath(url: string): string | undefined {
 
 type NodeProps<T extends 'a' | 'img'> = ComponentProps<T> & { node?: unknown };
 
-function makeComponents(slug: string, version: number | undefined): Components {
+function makeComponents(slug: string | undefined, version: number | undefined): Components {
   function Anchor({ node: _node, href, children, ...props }: NodeProps<'a'>) {
     if (isExternal(href)) {
       return (
@@ -82,8 +82,8 @@ function makeComponents(slug: string, version: number | undefined): Components {
         </a>
       );
     }
-    const path = skillRelativePath(href);
-    if (path === undefined) return <span>{children}</span>; // escapes the skill root
+    const path = slug === undefined ? undefined : skillRelativePath(href);
+    if (path === undefined) return <span>{children}</span>; // no files, or escapes the skill root
     const encoded = path.split('/').map(encodeURIComponent).join('/');
     const query = `?file=${encoded}${version === undefined ? '' : `&version=${version}`}`;
     return (
@@ -97,10 +97,10 @@ function makeComponents(slug: string, version: number | undefined): Components {
     if (!isSkillRelative(src)) {
       return <img src={src} alt={alt} {...props} />;
     }
-    const path = skillRelativePath(src);
+    const path = slug === undefined ? undefined : skillRelativePath(src);
     return (
       <img
-        src={path === undefined ? undefined : fileUrl(slug, path, version)}
+        src={path === undefined || slug === undefined ? undefined : fileUrl(slug, path, version)}
         alt={alt}
         {...props}
       />
@@ -113,8 +113,11 @@ function makeComponents(slug: string, version: number | undefined): Components {
 export interface MarkdownProps {
   /** Untrusted markdown (a skill's SKILL.md). */
   source: string;
-  /** The skill the markdown belongs to: relative links open its files, relative images load them. */
-  slug: string;
+  /**
+   * The skill the markdown belongs to: relative links open its files, relative images load them.
+   * Omit it for text without files (a subagent prompt): relative links and images are inert.
+   */
+  slug?: string | undefined;
   /** The version being viewed; omitted for the current one. */
   version?: number | undefined;
   className?: string;

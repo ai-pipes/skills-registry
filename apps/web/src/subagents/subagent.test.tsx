@@ -73,6 +73,18 @@ describe('subagent page', () => {
     expect(container.querySelector('script')).toBeNull();
   });
 
+  it('relative links and images in the prompt do not point at skill files', async () => {
+    subagentApi({
+      ...subagentView,
+      content: '---\nname: x\n---\n\n[ref](references/x.md) ![pic](assets/p.png)\n',
+    });
+    const { container } = renderSubagent();
+    await screen.findByRole('heading', { level: 1, name: 'code-reviewer' });
+    expect(screen.queryByRole('link', { name: 'ref' })).toBeNull();
+    expect(screen.getByText('ref')).toBeTruthy();
+    expect(container.querySelector('img')?.getAttribute('src') ?? null).toBeNull();
+  });
+
   it('archiving shows a toast and the page turns archived', async () => {
     const calls = subagentApi();
     const { user } = renderSubagent();
