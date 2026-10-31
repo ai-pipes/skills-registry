@@ -6,6 +6,14 @@ import { PgSkillRepository } from './infrastructure/pg-skill-repository.ts';
 import { PgSubagentRepository } from './infrastructure/pg-subagent-repository.ts';
 
 export { archiveSkill, restoreSkill } from './application/commands/archive.ts';
+export {
+  archiveSubagent,
+  createSubagent,
+  moveSubagent,
+  publishSubagent,
+  restoreSubagent,
+  rollbackSubagent,
+} from './application/commands/subagents.ts';
 export { createSkill } from './application/commands/create-skill.ts';
 export {
   archiveFolder,
@@ -18,13 +26,22 @@ export { publishVersion } from './application/commands/publish-version.ts';
 export { rollbackSkill } from './application/commands/rollback.ts';
 export type { CatalogDeps } from './application/deps.ts';
 export type { FileInput } from './application/file-input.ts';
-export type { FolderRef, FolderSummary } from './application/ports.ts';
+export type { FolderRef, FolderSummary, SubagentSummary } from './application/ports.ts';
 export { diffVersions, type FileDiff } from './application/queries/diff.ts';
 export { getSkillFile } from './application/queries/get-file.ts';
 export { getSkill, type SkillView } from './application/queries/get-skill.ts';
 export { getHistory, type VersionSummary } from './application/queries/history.ts';
 export { listFolders } from './application/queries/list-folders.ts';
 export { listSkills, type SkillSummary } from './application/queries/list-skills.ts';
+export {
+  diffSubagentVersions,
+  getSubagent,
+  getSubagentHistory,
+  listSubagents,
+  type SubagentDiff,
+  type SubagentVersionSummary,
+  type SubagentView,
+} from './application/queries/subagents.ts';
 export { CatalogError, type CatalogErrorCode } from './domain/errors.ts';
 export { nodeHasher } from './infrastructure/node-hasher.ts';
 

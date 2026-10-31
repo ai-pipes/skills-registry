@@ -3,7 +3,7 @@ import type { SkillReader } from '../application/ports.ts';
 
 /** SkillReader over Catalog's public queries (never Catalog tables). */
 export function createCatalogSkillReader(
-  catalog: Pick<CatalogDeps, 'skills' | 'blobs' | 'folders'>,
+  catalog: Pick<CatalogDeps, 'skills' | 'blobs' | 'folders' | 'subagents'>,
 ): SkillReader {
   return {
     async get(slug) {

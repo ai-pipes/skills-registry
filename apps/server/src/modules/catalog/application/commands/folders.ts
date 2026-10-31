@@ -5,6 +5,8 @@ import { Slug } from '../../domain/slug.ts';
 import type { CatalogDeps } from '../deps.ts';
 import type { FolderRef, FolderRepository } from '../ports.ts';
 
+type ArchivedCounts = { archivedSkills: number; archivedSubagents: number };
+
 /** How many times archiveFolder re-reads and retries after a concurrent change. */
 const ARCHIVE_ATTEMPTS = 3;
 
@@ -93,13 +95,13 @@ export async function updateFolder(
 }
 
 /**
- * Archives the folder and all its active skills in one transaction. A skill created in, moved into
+ * Archives the folder and all its active skills and subagents in one transaction. A skill created in, moved into
  * or published in the folder meanwhile makes the write a version_conflict: re-read and retry.
  */
 export function archiveFolder(
   deps: CatalogDeps,
   cmd: { slug: string; actorId: string },
-): Promise<Result<{ archivedSkills: number }, CatalogError>> {
+): Promise<Result<ArchivedCounts, CatalogError>> {
   return archiveAttempt(deps, cmd, ARCHIVE_ATTEMPTS);
 }
 
@@ -107,15 +109,17 @@ async function archiveAttempt(
   deps: CatalogDeps,
   cmd: { slug: string; actorId: string },
   attemptsLeft: number,
-): Promise<Result<{ archivedSkills: number }, CatalogError>> {
+): Promise<Result<ArchivedCounts, CatalogError>> {
   const folder = await loadFolder(deps.folders, cmd.slug);
   if (!folder.ok) return folder;
-  if (folder.value.status === 'archived') return ok({ archivedSkills: 0 });
+  if (folder.value.status === 'archived') return ok({ archivedSkills: 0, archivedSubagents: 0 });
   const skills = await deps.skills.listActiveInFolder(folder.value.id);
+  const subagents = await deps.subagents.listActiveInFolder(folder.value.id);
   const now = deps.clock.now();
   folder.value.archive(now);
   for (const skill of skills) skill.archive(cmd.actorId, now);
-  const saved = await write(() => deps.folders.archiveWithSkills(folder.value, skills, []));
+  for (const subagent of subagents) subagent.archive(now);
+  const saved = await write(() => deps.folders.archiveWithSkills(folder.value, skills, subagents));
   if (!saved.ok) {
     if (saved.error.code === 'version_conflict' && attemptsLeft > 1) {
       return archiveAttempt(deps, cmd, attemptsLeft - 1);
@@ -126,7 +130,7 @@ async function archiveAttempt(
     actorId: cmd.actorId,
     action: 'folder.archive',
     target: cmd.slug,
-    meta: { archivedSkills: skills.length },
+    meta: { archivedSkills: skills.length, archivedSubagents: subagents.length },
   });
   await skills.reduce(async (prev, skill) => {
     await prev;
@@ -137,7 +141,16 @@ async function archiveAttempt(
       meta: { version: skill.currentVersion, viaFolder: cmd.slug },
     });
   }, Promise.resolve());
-  return ok({ archivedSkills: skills.length });
+  await subagents.reduce(async (prev, subagent) => {
+    await prev;
+    await deps.audit.record({
+      actorId: cmd.actorId,
+      action: 'subagent.archive',
+      target: subagent.slug.value,
+      meta: { version: subagent.currentVersion, viaFolder: cmd.slug },
+    });
+  }, Promise.resolve());
+  return ok({ archivedSkills: skills.length, archivedSubagents: subagents.length });
 }
 
 /** Restores only the folder; its skills stay archived and are restored one by one. */
