@@ -22,10 +22,12 @@ export type SkillView = {
   source: SkillSource | null;
   /** The upstream commit of the shown version; null when it was not taken from upstream. */
   sourceCommit: string | null;
+  /** Slugs of the active subagents whose current version lists this skill. */
+  usedBy: string[];
 };
 
 export async function getSkill(
-  deps: Pick<CatalogDeps, 'skills' | 'blobs' | 'folders'>,
+  deps: Pick<CatalogDeps, 'skills' | 'blobs' | 'folders' | 'subagents'>,
   q: { slug: string; version?: number },
 ): Promise<Result<SkillView, CatalogError>> {
   const skill = await loadSkill(deps.skills, q.slug);
@@ -55,5 +57,6 @@ export async function getSkill(
     folder: { slug: folder.slug.value, name: folder.name },
     source: skill.value.source,
     sourceCommit: v.sourceCommit,
+    usedBy: await deps.subagents.usedBy(skill.value.slug.value),
   });
 }

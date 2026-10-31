@@ -27,7 +27,7 @@ export class Slug {
   }
 
   /** The error creation returns for a reserved slug; `kind` names the clashing page. */
-  static reservedError(slug: Slug, kind: 'skill' | 'folder' = 'skill'): CatalogError {
+  static reservedError(slug: Slug, kind: 'skill' | 'folder' | 'subagent' = 'skill'): CatalogError {
     return new CatalogError(
       'invalid_slug',
       `slug "${slug.value}" is reserved: /${kind}s/${slug.value} is the new-${kind} page`,

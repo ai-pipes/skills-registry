@@ -259,14 +259,19 @@ describe('archiveFolder / restoreFolder', () => {
     const before = skills.outbox.length;
     expect(await archiveFolder(deps, { slug: 'devops', actorId: 'u' })).toEqual({
       ok: true,
-      value: { archivedSkills: 2 },
+      value: { archivedSkills: 2, archivedSubagents: 0 },
     });
     expect(await statuses(['a', 'b', 'c'])).toEqual(['archived', 'archived', 'archived']);
     expect(await statusOf('other')).toBe('active');
     const events = skills.outbox.slice(before);
     expect(events.map((e) => e.type)).toEqual(['catalog.skill_archived', 'catalog.skill_archived']);
     expect(audit).toEqual([
-      { actorId: 'u', action: 'folder.archive', target: 'devops', meta: { archivedSkills: 2 } },
+      {
+        actorId: 'u',
+        action: 'folder.archive',
+        target: 'devops',
+        meta: { archivedSkills: 2, archivedSubagents: 0 },
+      },
       {
         actorId: 'u',
         action: 'skill.archive',
@@ -285,7 +290,7 @@ describe('archiveFolder / restoreFolder', () => {
 
     expect(await archiveFolder(deps, { slug: 'devops', actorId: 'u' })).toEqual({
       ok: true,
-      value: { archivedSkills: 0 },
+      value: { archivedSkills: 0, archivedSubagents: 0 },
     });
     expect(audit).toHaveLength(3);
   });
@@ -336,7 +341,7 @@ describe('archiveFolder / restoreFolder', () => {
 
   it('retries a version_conflict up to three attempts', async () => {
     const r = await archiveFolder({ ...deps, folders: flaky(2) }, { slug: 'devops', actorId: 'u' });
-    expect(r).toEqual({ ok: true, value: { archivedSkills: 2 } });
+    expect(r).toEqual({ ok: true, value: { archivedSkills: 2, archivedSubagents: 0 } });
     expect(await statusOf('a')).toBe('archived');
   });
 
@@ -360,7 +365,7 @@ describe('archiveFolder / restoreFolder', () => {
       },
     };
     const r = await archiveFolder({ ...deps, folders: racing }, { slug: 'devops', actorId: 'u' });
-    expect(r).toEqual({ ok: true, value: { archivedSkills: 3 } });
+    expect(r).toEqual({ ok: true, value: { archivedSkills: 3, archivedSubagents: 0 } });
     expect(await statusOf('late')).toBe('archived');
   });
 

@@ -46,7 +46,10 @@ export function makeCatalogDeps(): {
     skills,
     folders,
     subagents,
-    blobs: skills,
+    // One blob table, as in Postgres: SKILL files and SUBAGENT.md share it.
+    blobs: {
+      get: async (hash) => (await skills.get(hash)) ?? subagents.blobs.get(hash.value) ?? null,
+    },
     hasher: shaHasher,
     ids: new SeqIds(),
     clock,
