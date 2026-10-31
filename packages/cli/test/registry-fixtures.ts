@@ -58,3 +58,27 @@ export function skillView(slug: string, over: Record<string, unknown> = {}) {
     ...over,
   };
 }
+
+export function subagentSummary(slug: string, over: Record<string, unknown> = {}) {
+  return {
+    slug,
+    name: slug,
+    description: `About ${slug}`,
+    status: 'active',
+    folder: { slug: 'design', name: 'Design' },
+    version: 1,
+    updatedAt: '2026-10-29T10:00:00.000Z',
+    model: 'inherit',
+    tools: null,
+    skills: [],
+    ...over,
+  };
+}
+
+export function subagentView(slug: string, over: Record<string, unknown> = {}) {
+  return {
+    ...subagentSummary(slug),
+    content: `---\nname: ${slug}\ndescription: About ${slug}\n---\nYou are ${slug}.\n`,
+    ...over,
+  };
+}

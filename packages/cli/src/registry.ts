@@ -7,6 +7,8 @@ import {
   type SkillStatusFilter,
   SkillSummary,
   SkillView,
+  SubagentSummary,
+  SubagentView,
   VersionRef,
   VersionSummary,
 } from '@skills/contracts';
@@ -135,6 +137,24 @@ export class RegistryClient {
     const encoded = path.split('/').map(encodeURIComponent).join('/');
     const res = await this.send('GET', `${skillPath(slug)}/files/${encoded}?version=${version}`);
     return new Uint8Array(await res.arrayBuffer());
+  }
+
+  listSubagents(q: { folder?: string; status?: SkillStatusFilter }) {
+    const params = new URLSearchParams();
+    if (q.status !== undefined) params.set('status', q.status);
+    if (q.folder !== undefined) params.set('folder', q.folder);
+    const query = params.size > 0 ? `?${params}` : '';
+    return this.get(`/api/subagents${query}`, SubagentSummary.array());
+  }
+
+  /** `null` when the subagent does not exist. */
+  async getSubagent(slug: string): Promise<SubagentView | null> {
+    try {
+      return await this.get(`/api/subagents/${encodeURIComponent(slug)}`, SubagentView);
+    } catch (e) {
+      if (e instanceof RegistryError && e.status === 404) return null;
+      throw e;
+    }
   }
 
   history(slug: string) {

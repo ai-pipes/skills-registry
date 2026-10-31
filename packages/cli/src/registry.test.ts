@@ -5,6 +5,8 @@ import {
   recordingFetch,
   skillSummary,
   skillView,
+  subagentSummary,
+  subagentView,
 } from '../test/registry-fixtures.ts';
 import { RegistryClient, RegistryError } from './registry.ts';
 
@@ -154,5 +156,20 @@ describe('RegistryClient', () => {
     expect(form.get('keep')).toBe('[]');
     expect(form.get('sourceCommit')).toBe('b'.repeat(40));
     expect(formOf(requests[1]).has('sourceCommit')).toBe(false);
+  });
+
+  it('lists subagents with filters and maps 404 of getSubagent to null', async () => {
+    const { fetch, requests } = recordingFetch((r) =>
+      r.url.endsWith('/api/subagents/ghost')
+        ? json(404, { error: { code: 'not_found', message: 'no' } })
+        : r.url.includes('/api/subagents/')
+          ? json(200, subagentView('ops'))
+          : json(200, [subagentSummary('ops')]),
+    );
+    const client = new RegistryClient(conn, fetch);
+    expect(await client.listSubagents({ folder: 'eng', status: 'all' })).toHaveLength(1);
+    expect(requests[0]?.url).toBe('https://skills.example/api/subagents?status=all&folder=eng');
+    expect((await client.getSubagent('ops'))?.slug).toBe('ops');
+    expect(await client.getSubagent('ghost')).toBeNull();
   });
 });
