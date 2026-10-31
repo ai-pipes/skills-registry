@@ -19,7 +19,11 @@ export type CatalogErrorCode =
   | 'folder_archived'
   | 'invalid_folder'
   | 'invalid_source'
-  | 'not_imported';
+  | 'not_imported'
+  | 'subagent_not_found'
+  | 'subagent_exists'
+  | 'subagent_archived'
+  | 'unknown_skill';
 
 export class CatalogError extends DomainError {
   declare readonly code: CatalogErrorCode;
