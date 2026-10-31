@@ -3,6 +3,8 @@ import type {
   MeResponse,
   SkillSource,
   SkillSummary,
+  SubagentSummary,
+  SubagentView,
   UserSummary,
 } from '@skills/contracts';
 
@@ -87,4 +89,23 @@ export const bobUser: UserSummary = {
   sso: false,
   email: null,
   lastLoginAt: null,
+};
+
+export const subagentSummary: SubagentSummary = {
+  slug: 'code-reviewer',
+  name: 'code-reviewer',
+  description: 'Reviews diffs before merge.',
+  status: 'active',
+  folder: { slug: 'general', name: 'General' },
+  version: 2,
+  updatedAt: '2026-10-30T12:00:00.000Z',
+  model: 'sonnet',
+  tools: ['Read', 'Grep'],
+  skills: ['code-review'],
+};
+
+export const subagentView: SubagentView = {
+  ...subagentSummary,
+  content:
+    '---\nname: code-reviewer\ndescription: Reviews diffs before merge.\nmodel: sonnet\n---\n\nYou are a **careful** reviewer.\n',
 };

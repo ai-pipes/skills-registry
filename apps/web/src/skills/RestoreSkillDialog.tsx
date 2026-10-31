@@ -2,7 +2,13 @@ import type { FolderRef } from '@skills/contracts';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { isApiError } from '@/api/errors.ts';
-import { useFolders, useRestoreFolder, useRestoreSkillTo, useSetArchived } from '@/api/queries.ts';
+import {
+  useFolders,
+  useRestoreFolder,
+  useRestoreSkillTo,
+  useRestoreSubagent,
+  useSetArchived,
+} from '@/api/queries.ts';
 import { ErrorAlert } from '@/components/ErrorAlert.tsx';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -12,6 +18,8 @@ import { FolderPicker } from './FolderPicker.tsx';
 
 export interface RestoreSkillDialogProps {
   slug: string;
+  /** What is restored: a skill (default) or a subagent; only the endpoint and the texts differ. */
+  kind?: 'skill' | 'subagent';
   /** The skill's (archived) folder. */
   folder: FolderRef;
   open: boolean;
@@ -19,11 +27,24 @@ export interface RestoreSkillDialogProps {
 }
 
 /** Mounted by the parent only while open, so its state starts clean. The skill's folder is archived: restore the folder with the skill, or restore into another folder. */
-export function RestoreSkillDialog({ slug, folder, open, onOpenChange }: RestoreSkillDialogProps) {
+export function RestoreSkillDialog({
+  slug,
+  kind = 'skill',
+  folder,
+  open,
+  onOpenChange,
+}: RestoreSkillDialogProps) {
   const folders = useFolders('active');
   const restoreFolder = useRestoreFolder(folder.slug);
-  const restoreSkill = useSetArchived(slug);
-  const restoreInto = useRestoreSkillTo(slug);
+  const setSkillArchived = useSetArchived(slug);
+  const restoreSkillInto = useRestoreSkillTo(slug);
+  const restoreSubagent = useRestoreSubagent(slug);
+  const subagent = kind === 'subagent';
+  const texts = subagent ? strings.subagent : strings.skill;
+  const restoreItem = () =>
+    subagent ? restoreSubagent.mutateAsync(undefined) : setSkillArchived.mutateAsync(false);
+  const restoreInto = (target: string) =>
+    subagent ? restoreSubagent.mutateAsync(target) : restoreSkillInto.mutateAsync(target);
   const [target, setTarget] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -36,7 +57,7 @@ export function RestoreSkillDialog({ slug, folder, open, onOpenChange }: Restore
     setError(null);
     try {
       await action();
-      notify.success(strings.skill.restored);
+      notify.success(texts.restored);
       onOpenChange(false);
     } catch (e) {
       setError(e);
@@ -55,7 +76,7 @@ export function RestoreSkillDialog({ slug, folder, open, onOpenChange }: Restore
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{strings.skill.restoreFolderTitle(folder.name)}</DialogTitle>
+          <DialogTitle>{texts.restoreFolderTitle(folder.name)}</DialogTitle>
         </DialogHeader>
         <Button
           type="button"
@@ -63,11 +84,13 @@ export function RestoreSkillDialog({ slug, folder, open, onOpenChange }: Restore
           onClick={() =>
             void run(async () => {
               await restoreFolder.mutateAsync();
-              await restoreSkill.mutateAsync(false);
+              await restoreItem();
             })
           }
         >
-          {strings.skill.restoreFolderAndSkill}
+          {subagent
+            ? strings.subagent.restoreFolderAndSubagent
+            : strings.skill.restoreFolderAndSkill}
         </Button>
         {folders.isError && <ErrorAlert error={folders.error} />}
         {folders.data !== undefined && others.length === 0 ? (
@@ -89,7 +112,7 @@ export function RestoreSkillDialog({ slug, folder, open, onOpenChange }: Restore
               type="button"
               variant="outline"
               disabled={chosen === undefined || pending}
-              onClick={() => void run(() => restoreInto.mutateAsync(chosen?.slug ?? ''))}
+              onClick={() => void run(() => restoreInto(chosen?.slug ?? ''))}
             >
               {strings.skill.restoreInto}
             </Button>

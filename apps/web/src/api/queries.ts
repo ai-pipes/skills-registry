@@ -6,11 +6,18 @@ import {
   FolderSummary,
   SkillSummary,
   SkillView,
+  SubagentDiff,
+  SubagentSummary,
+  SubagentVersionSummary,
+  SubagentView,
   TokenSummary,
   UserSummary,
   VersionRef,
   VersionSummary,
   type CreateFolderRequest,
+  type CreateSubagentRequest,
+  type PublishSubagentRequest,
+  type RollbackRequest,
   type FolderStatusFilter,
   type SkillStatusFilter,
   type UpdateFolderRequest,
@@ -38,6 +45,15 @@ export const queryKeys = {
     ['skill', slug, 'file', path, version ?? null] as const,
   history: (slug: string) => ['skill', slug, 'history'] as const,
   diff: (slug: string, from: number, to: number) => ['skill', slug, 'diff', from, to] as const,
+  subagents: ['subagents'] as const,
+  subagentList: (status: SkillStatusFilter, q: string, folder: string | null) =>
+    ['subagents', status, q, folder] as const,
+  subagent: (slug: string) => ['subagent', slug] as const,
+  subagentView: (slug: string, version: number | undefined) =>
+    ['subagent', slug, 'view', version ?? null] as const,
+  subagentHistory: (slug: string) => ['subagent', slug, 'history'] as const,
+  subagentDiff: (slug: string, from: number, to: number) =>
+    ['subagent', slug, 'diff', from, to] as const,
   tokens: ['tokens'] as const,
   users: ['users'] as const,
   authConfig: ['auth-config'] as const,
@@ -267,5 +283,144 @@ export function useSaveSkill() {
         ? api.upload('POST', '/api/skills', form, VersionRef)
         : api.upload('PUT', skillPath(slug), form, VersionRef),
     onSuccess: (ref) => invalidate(ref.slug),
+  });
+}
+
+function subagentPath(slug: string): string {
+  return `/api/subagents/${encodeURIComponent(slug)}`;
+}
+
+/** `GET /api/subagents?status=&q=&folder=`; `folder` is sent only when set. */
+export function useSubagents({
+  status,
+  q,
+  folder,
+}: {
+  status: SkillStatusFilter;
+  q: string;
+  folder?: string | null;
+}) {
+  return useQuery({
+    queryKey: queryKeys.subagentList(status, q, folder ?? null),
+    queryFn: () => {
+      const params = new URLSearchParams({ status });
+      if (q !== '') params.set('q', q);
+      if (folder) params.set('folder', folder);
+      return api.get(`/api/subagents?${params}`, SubagentSummary.array());
+    },
+    placeholderData: (previous) => previous,
+  });
+}
+
+/** `GET /api/subagents/:slug[?version=N]`. */
+export function useSubagent(slug: string, version?: number) {
+  return useQuery({
+    queryKey: queryKeys.subagentView(slug, version),
+    queryFn: () => api.get(withVersion(subagentPath(slug), version), SubagentView),
+  });
+}
+
+/**
+ * `GET /api/subagents/:slug/history`, newest first as the server sends it.
+ * @public Consumed by the editor, history and diff pages that come next.
+ */
+export function useSubagentHistory(slug: string) {
+  return useQuery({
+    queryKey: queryKeys.subagentHistory(slug),
+    queryFn: () => api.get(`${subagentPath(slug)}/history`, SubagentVersionSummary.array()),
+  });
+}
+
+/**
+ * `GET /api/subagents/:slug/diff?from=&to=`.
+ * @public Consumed by the editor, history and diff pages that come next.
+ */
+export function useSubagentDiff(slug: string, from: number, to: number, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.subagentDiff(slug, from, to),
+    queryFn: () => api.get(`${subagentPath(slug)}/diff?from=${from}&to=${to}`, SubagentDiff),
+    enabled,
+  });
+}
+
+/**
+ * Lists and every query of `slug` are refetched after a change to the subagent. Skill views
+ * carry `usedBy`, so skills are refetched too.
+ */
+function useInvalidateSubagent() {
+  const client = useQueryClient();
+  return (slug: string) =>
+    Promise.all([
+      client.invalidateQueries({ queryKey: queryKeys.subagents }),
+      client.invalidateQueries({ queryKey: queryKeys.subagent(slug) }),
+      client.invalidateQueries({ queryKey: queryKeys.skills }),
+      client.invalidateQueries({ queryKey: ['skill'] }),
+      client.invalidateQueries({ queryKey: queryKeys.folders }),
+    ]);
+}
+
+/**
+ * `POST /api/subagents`.
+ * @public Consumed by the editor, history and diff pages that come next.
+ */
+export function useCreateSubagent() {
+  const invalidate = useInvalidateSubagent();
+  return useMutation({
+    mutationFn: (body: CreateSubagentRequest) => api.post('/api/subagents', body, VersionRef),
+    onSuccess: (ref) => invalidate(ref.slug),
+  });
+}
+
+/**
+ * `PUT /api/subagents/:slug`: a new version on top of `baseVersion`.
+ * @public Consumed by the editor, history and diff pages that come next.
+ */
+export function usePublishSubagent(slug: string) {
+  const invalidate = useInvalidateSubagent();
+  return useMutation({
+    mutationFn: (body: PublishSubagentRequest) => api.put(subagentPath(slug), body, VersionRef),
+    // also on a 409: the page is then refetched to show what changed
+    onSettled: () => invalidate(slug),
+  });
+}
+
+/**
+ * `POST /api/subagents/:slug/rollback`: a new version restored from `toVersion`.
+ * @public Consumed by the editor, history and diff pages that come next.
+ */
+export function useRollbackSubagent(slug: string) {
+  const invalidate = useInvalidateSubagent();
+  return useMutation({
+    mutationFn: (body: RollbackRequest) =>
+      api.post(`${subagentPath(slug)}/rollback`, body, VersionRef),
+    onSettled: () => invalidate(slug),
+  });
+}
+
+/** `POST /api/subagents/:slug/archive`. */
+export function useArchiveSubagent(slug: string) {
+  const invalidate = useInvalidateSubagent();
+  return useMutation({
+    mutationFn: () => api.post(`${subagentPath(slug)}/archive`),
+    onSuccess: () => invalidate(slug),
+  });
+}
+
+/** `POST /api/subagents/:slug/restore`, into `folder` when given (its own folder is archived). */
+export function useRestoreSubagent(slug: string) {
+  const invalidate = useInvalidateSubagent();
+  return useMutation({
+    mutationFn: (folder?: string) =>
+      api.post(`${subagentPath(slug)}/restore`, folder === undefined ? undefined : { folder }),
+    onSuccess: () => invalidate(slug),
+  });
+}
+
+/** `POST /api/subagents/:slug/move`. */
+export function useMoveSubagent(slug: string) {
+  const invalidate = useInvalidateSubagent();
+  return useMutation({
+    mutationFn: (folder: string) => api.post(`${subagentPath(slug)}/move`, { folder }),
+    onSuccess: () => invalidate(slug),
   });
 }
