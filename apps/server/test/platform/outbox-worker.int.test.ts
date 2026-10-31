@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { type CatalogDeps, createPgCatalog, createSkill } from '../../src/modules/catalog/index.ts';
 import {
   createCatalogSkillReader,
+  createCatalogSubagentReader,
   createPgSearch,
   indexMissingEmbeddings,
   searchEventHandlers,
@@ -43,6 +44,7 @@ beforeEach(async () => {
     ...createPgSearch(pg.sql),
     embedder,
     skills: createCatalogSkillReader(catalog),
+    subagents: createCatalogSubagentReader(catalog),
     minSimilarity: 0.3,
   };
 });

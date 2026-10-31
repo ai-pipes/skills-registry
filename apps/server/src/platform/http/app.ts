@@ -14,7 +14,7 @@ import {
 import { tokenRoutes } from '../../modules/identity/interfaces/http/tokens.ts';
 import { userRoutes } from '../../modules/identity/interfaces/http/users.ts';
 import { loginsByIds } from '../../modules/identity/index.ts';
-import { searchSkills } from '../../modules/search/index.ts';
+import { searchSkills, searchSubagents } from '../../modules/search/index.ts';
 import { DomainError, errorFields } from '../../shared-kernel/index.ts';
 import type { Container } from '../container.ts';
 import { mcpRoute } from '../mcp/server.ts';
@@ -122,9 +122,9 @@ export function createHttpApp(c: Container, opts: HttpAppOptions = {}): HttpApp 
   app.use('/api/*', (ctx, next) =>
     PUBLIC_AUTH_PATHS.has(ctx.req.path) ? next() : session(ctx, next),
   );
-  const search = async (query: string, folders?: string[]) =>
+  const slugsBy = (searchKind: typeof searchSkills) => async (query: string, folders?: string[]) =>
     (
-      await searchSkills(c.search, {
+      await searchKind(c.search, {
         query,
         limit: SEARCH_LIMIT,
         ...(folders ? { folders } : {}),
@@ -139,12 +139,8 @@ export function createHttpApp(c: Container, opts: HttpAppOptions = {}): HttpApp 
     }),
   );
   const logins = (ids: string[]) => loginsByIds(c.identity, ids);
-  app.route('/api/skills', skillRoutes(c.catalog, search, logins));
-  // Subagent search arrives with the Search kinds (Task 6); until then a query matches nothing.
-  app.route(
-    '/api/subagents',
-    subagentRoutes(c.catalog, () => Promise.resolve([]), logins),
-  );
+  app.route('/api/skills', skillRoutes(c.catalog, slugsBy(searchSkills), logins));
+  app.route('/api/subagents', subagentRoutes(c.catalog, slugsBy(searchSubagents), logins));
   app.route('/api/folders', folderRoutes(c.catalog));
   app.route('/api/tokens', tokenRoutes(c.identity, { publicUrl: config.publicUrl }));
   app.route('/api/users', userRoutes(c.identity));

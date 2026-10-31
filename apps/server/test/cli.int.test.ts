@@ -123,7 +123,7 @@ describe('cli users and tokens', () => {
     await seedSkills();
     const r = await cli(['reindex']);
     expect(r.code).toBe(0);
-    expect(r.out).toEqual(['reindexed 2 skills']);
+    expect(r.out).toEqual(['reindexed 2 documents']);
   });
 
   it('prints usage for an unknown command or missing arguments', async () => {

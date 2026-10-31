@@ -8,6 +8,7 @@ import {
 } from '../modules/identity/index.ts';
 import {
   createCatalogSkillReader,
+  createCatalogSubagentReader,
   createPgSearch,
   type Embedder,
   OpenAiCompatibleEmbedder,
@@ -99,6 +100,7 @@ export function buildContainer(config: Config, sql: Sql, opts: ContainerOptions 
     ...createPgSearch(sql),
     embedder: opts.embedder ?? createEmbedder(config),
     skills: createCatalogSkillReader(catalog),
+    subagents: createCatalogSubagentReader(catalog),
     minSimilarity: config.searchMinSimilarity,
   };
   return { catalog, identity, search, audit, logger, config, sql };

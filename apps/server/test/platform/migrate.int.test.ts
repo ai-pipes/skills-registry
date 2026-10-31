@@ -23,6 +23,7 @@ describe('migrate', () => {
     expect(rows.map((r) => r.name)).toContain('0006_catalog_folders.sql');
     expect(rows.map((r) => r.name)).toContain('0007_search_folders.sql');
     expect(rows.map((r) => r.name)).toContain('0009_catalog_general_folder_english.sql');
+    expect(rows.map((r) => r.name)).toContain('0012_search_kinds.sql');
   });
 
   it('0006 moves existing skills into the general folder', async () => {
@@ -53,8 +54,16 @@ describe('migrate', () => {
       const [col] = await sql`select is_nullable from information_schema.columns
         where table_schema = 'catalog' and table_name = 'skills' and column_name = 'folder_id'`;
       expect(col?.is_nullable).toBe('NO');
-      const docs = await sql`select folder from search.documents where slug = 'old-skill'`;
-      expect(docs[0]?.folder).toBe('general');
+      const docs = await sql`select folder, kind from search.documents where slug = 'old-skill'`;
+      expect({ ...docs[0] }).toEqual({ folder: 'general', kind: 'skill' });
+      // 0012: the key is (kind, slug), so a subagent may share the slug of a skill.
+      await sql`insert into search.documents (kind, slug, name, description, version, fts, folder)
+        values ('subagent', 'old-skill', 'old-skill', 'Old', 1, to_tsvector('simple', 'old'),
+          'general')`;
+      await expect(
+        sql`insert into search.documents (slug, name, description, version, fts, folder)
+          values ('x', 'x', 'x', 1, to_tsvector('simple', 'x'), 'general')`,
+      ).rejects.toThrow(/kind/);
     } finally {
       await sql.end();
     }
@@ -134,6 +143,7 @@ describe('migrate', () => {
       ['updated_at', 'timestamptz', 'NO'],
       ['embed_failed_at', 'timestamptz', 'YES'],
       ['folder', 'text', 'NO'],
+      ['kind', 'text', 'NO'],
     ]);
     const [dims] = await pg.sql<{ typmod: number }[]>`
       select atttypmod as typmod from pg_attribute
@@ -146,6 +156,12 @@ describe('migrate', () => {
     expect(defs.some((d) => /USING hnsw \(embedding vector_cosine_ops\)/.test(d))).toBe(true);
     expect(
       defs.some((d) => /documents_folder_idx ON search\.documents USING btree \(folder\)/.test(d)),
+    ).toBe(true);
+    expect(defs).toContain(
+      'CREATE UNIQUE INDEX documents_pkey ON search.documents USING btree (kind, slug)',
+    );
+    expect(
+      defs.some((d) => /documents_kind_idx ON search\.documents USING btree \(kind\)/.test(d)),
     ).toBe(true);
   });
 
