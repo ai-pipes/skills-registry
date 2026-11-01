@@ -81,7 +81,7 @@ export function subagentRoutes(deps: CatalogDeps, search: SearchSlugs, logins: L
       const versions = unwrap(await getSubagentHistory(deps, { slug: c.req.param('slug') }));
       const byId = await logins(versions.map((v) => v.authorId));
       return c.json(
-        versions.map((v) => Object.assign(v, { authorLogin: byId.get(v.authorId) ?? null })),
+        versions.map((v) => Object.assign({}, v, { authorLogin: byId.get(v.authorId) ?? null })),
       );
     })
     .get('/:slug/diff', async (c) => {

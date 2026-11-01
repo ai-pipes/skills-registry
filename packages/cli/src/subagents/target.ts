@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { UsageError } from '../args.ts';
 import type { CliEnv } from '../env.ts';
-import { AGENTS, selectAgents } from '../install/agents.ts';
+import { AGENTS } from '../install/agents.ts';
 
 const SUPPORTED = 'claude-code';
 
@@ -14,10 +14,10 @@ export function selectSubagentTarget(ids: string[], env: Pick<CliEnv, 'home'>): 
   }
   for (const id of ids) {
     if (id === SUPPORTED || id === '*') continue;
-    selectAgents([id], env); // an unknown id throws the shared message
-    if (AGENTS.some((a) => a.id === id)) {
-      throw new UsageError(`${id} does not support subagents (supported: ${SUPPORTED})`);
+    if (!AGENTS.some((a) => a.id === id)) {
+      throw new UsageError(`unknown agent "${id}"; known: ${AGENTS.map((a) => a.id).join(', ')}`);
     }
+    throw new UsageError(`${id} does not support subagents (supported: ${SUPPORTED})`);
   }
   return SUPPORTED;
 }

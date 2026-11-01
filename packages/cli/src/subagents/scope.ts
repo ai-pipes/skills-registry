@@ -14,16 +14,16 @@ export type Scope = {
   manifest: InstalledManifest;
 };
 
-export async function openScope(env: CliEnv, global: boolean): Promise<Scope> {
+/** The registry connection alone, for commands that never touch the local manifest. */
+export async function openClient(env: CliEnv): Promise<{ client: RegistryClient; server: string }> {
   const conn = await requireConnection(env);
+  return { client: new RegistryClient(conn, env.fetch), server: conn.url.replace(/\/+$/, '') };
+}
+
+export async function openScope(env: CliEnv, global: boolean): Promise<Scope> {
+  const { client, server } = await openClient(env);
   const dir = agentsDir(env, global);
-  return {
-    env,
-    client: new RegistryClient(conn, env.fetch),
-    server: conn.url.replace(/\/+$/, ''),
-    dir,
-    manifest: await readInstalled(dir),
-  };
+  return { env, client, server, dir, manifest: await readInstalled(dir) };
 }
 
 /** A name the user connected the registry's MCP server under; anything else is a usage error. */

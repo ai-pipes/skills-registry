@@ -8,6 +8,7 @@ import { inspectDir, inspectLink } from '../install/marker.ts';
 import { checkPath, linkOrCopy, writeSkillDir } from '../install/write.ts';
 import { manifestOf, sha256 } from '../manifest.ts';
 import { safe } from '../output.ts';
+import { checkSlug } from '../slug.ts';
 import { RegistryClient } from '../registry.ts';
 
 const options = {
@@ -20,14 +21,6 @@ const options = {
 
 /** Files downloaded at once. */
 const DOWNLOADS = 8;
-
-const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-
-/** A kebab-case slug (it becomes a file or directory name); anything else is a usage error. */
-export function checkSlug(slug: string, noun = 'skill'): string {
-  if (!SLUG.test(slug)) throw new UsageError(`invalid ${noun} slug "${slug}"`);
-  return slug;
-}
 
 function parseTarget(arg: string): { slug: string; version: number | undefined } {
   const at = arg.lastIndexOf('@');

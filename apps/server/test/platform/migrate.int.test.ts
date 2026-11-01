@@ -160,9 +160,8 @@ describe('migrate', () => {
     expect(defs).toContain(
       'CREATE UNIQUE INDEX documents_pkey ON search.documents USING btree (kind, slug)',
     );
-    expect(
-      defs.some((d) => /documents_kind_idx ON search\.documents USING btree \(kind\)/.test(d)),
-    ).toBe(true);
+    // the (kind, slug) primary key already covers lookups by kind
+    expect(defs.some((d) => d.includes('documents_kind_idx'))).toBe(false);
   });
 
   it('0010 keeps existing password users unlinked, with no groups', async () => {

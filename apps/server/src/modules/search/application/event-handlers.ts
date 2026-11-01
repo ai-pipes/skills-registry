@@ -3,7 +3,7 @@ import type { DocumentKind, SearchDeps } from './ports.ts';
 
 export type EventHandler = (payload: Record<string, unknown>) => Promise<void>;
 
-const SUBSCRIBED: Record<string, DocumentKind> = {
+const SUBSCRIBED = {
   'catalog.skill_version_created': 'skill',
   'catalog.skill_archived': 'skill',
   'catalog.skill_restored': 'skill',
@@ -12,7 +12,7 @@ const SUBSCRIBED: Record<string, DocumentKind> = {
   'catalog.subagent_archived': 'subagent',
   'catalog.subagent_restored': 'subagent',
   'catalog.subagent_moved': 'subagent',
-};
+} as const satisfies Record<string, DocumentKind>;
 
 /** Outbox handlers: every subscribed Catalog event re-syncs that kind's document by slug. */
 export function searchEventHandlers(deps: SearchDeps): Record<string, EventHandler> {

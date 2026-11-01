@@ -7,5 +7,3 @@ alter table search.documents alter column kind drop default;
 
 alter table search.documents drop constraint documents_pkey;
 alter table search.documents add primary key (kind, slug);
-
-create index documents_kind_idx on search.documents (kind);

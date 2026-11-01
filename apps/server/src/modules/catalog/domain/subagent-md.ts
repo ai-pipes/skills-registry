@@ -1,6 +1,6 @@
 import { err, ok, type Result } from '../../../shared-kernel/index.ts';
 import { CatalogError } from './errors.ts';
-import { splitFrontmatter } from './frontmatter.ts';
+import { parseNameAndDescription, splitFrontmatter } from './frontmatter.ts';
 import { Slug } from './slug.ts';
 
 export type SubagentModel = 'inherit' | 'sonnet' | 'opus' | 'haiku';
@@ -18,7 +18,6 @@ export type ParsedSubagentMd = {
 export const MAX_SUBAGENT_MD_BYTES = 65_536;
 export const MAX_SUBAGENT_SKILLS = 20;
 
-const MAX_DESCRIPTION = 1024;
 const MODELS: readonly SubagentModel[] = ['inherit', 'sonnet', 'opus', 'haiku'];
 const isModel = (v: unknown): v is SubagentModel => MODELS.some((m) => m === v);
 const KNOWN_KEYS = new Set(['name', 'description', 'tools', 'model', 'skills']);
@@ -26,8 +25,6 @@ const BUILTIN_TOOL_RE = /^[A-Z][A-Za-z0-9]*$/;
 const MCP_TOOL_RE = /^mcp__[A-Za-z0-9_-]+__[A-Za-z0-9_-]+$/;
 
 const invalid = (message: string) => err(new CatalogError('invalid_frontmatter', message));
-
-const nonEmptyString = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
 
 /** A list of strings without duplicates; `field` names it in the error. */
 function stringList(v: unknown, field: string): Result<string[], CatalogError> {
@@ -51,14 +48,9 @@ export function parseSubagentMd(text: string): Result<ParsedSubagentMd, CatalogE
   const unknown = Object.keys(data).find((k) => !KNOWN_KEYS.has(k));
   if (unknown !== undefined) return invalid(`unknown frontmatter key "${unknown}"`);
 
-  const { name, description } = data;
-  if (!nonEmptyString(name)) return invalid('frontmatter "name" must be a non-empty string');
-  if (!nonEmptyString(description)) {
-    return invalid('frontmatter "description" must be a non-empty string');
-  }
-  if (description.length > MAX_DESCRIPTION) {
-    return invalid(`frontmatter "description" exceeds ${MAX_DESCRIPTION} characters`);
-  }
+  const nd = parseNameAndDescription(data);
+  if (!nd.ok) return nd;
+  const { name, description } = nd.value;
 
   let tools: string[] | null = null;
   if (data.tools !== undefined) {

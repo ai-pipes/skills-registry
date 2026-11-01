@@ -9,6 +9,25 @@ const invalid = (message: string) => err(new CatalogError('invalid_frontmatter',
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
+const nonEmptyString = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
+
+const MAX_DESCRIPTION = 1024;
+
+/** The `name` and `description` every SKILL.md / SUBAGENT.md frontmatter must carry. */
+export function parseNameAndDescription(
+  data: Record<string, unknown>,
+): Result<{ name: string; description: string }, CatalogError> {
+  const { name, description } = data;
+  if (!nonEmptyString(name)) return invalid('frontmatter "name" must be a non-empty string');
+  if (!nonEmptyString(description)) {
+    return invalid('frontmatter "description" must be a non-empty string');
+  }
+  if (description.length > MAX_DESCRIPTION) {
+    return invalid(`frontmatter "description" exceeds ${MAX_DESCRIPTION} characters`);
+  }
+  return ok({ name, description });
+}
+
 /** ` (line N, column M)` in the file (the frontmatter starts on line 2), or `''`. */
 function yamlPosition(cause: unknown): string {
   const at = cause instanceof YAMLError ? cause.linePos?.[0] : undefined;

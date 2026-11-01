@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { FolderRef } from './folders.ts';
-import { SkillStatus, VersionSummary } from './skills.ts';
+import { SkillStatus, SkillStatusFilter, VersionSummary } from './skills.ts';
 
 export const SubagentModel = z.enum(['inherit', 'sonnet', 'opus', 'haiku']);
 export type SubagentModel = z.infer<typeof SubagentModel>;
@@ -10,14 +10,14 @@ export const BUILTIN_TOOL_PATTERN = /^[A-Z][A-Za-z0-9]*$/;
 /** An MCP tool name, `mcp__<server>__<tool>`. */
 export const MCP_TOOL_PATTERN = /^mcp__[A-Za-z0-9_-]+__[A-Za-z0-9_-]+$/;
 
-/** The whole `SUBAGENT.md`, in bytes (UTF-8). */
+/** Limit on the whole `SUBAGENT.md`: the request schema counts characters, the server checks UTF-8 bytes. */
 export const MAX_SUBAGENT_MD_BYTES = 65_536;
 
 const message = z.string().max(2000);
 const content = z.string().max(MAX_SUBAGENT_MD_BYTES);
 
 export const ListSubagentsQuery = z.object({
-  status: z.enum(['active', 'archived', 'all']).default('active'),
+  status: SkillStatusFilter.default('active'),
   q: z.string().max(500).optional(),
   folder: z.string().max(200).optional(),
 });
