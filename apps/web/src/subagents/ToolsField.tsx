@@ -1,6 +1,6 @@
 import { BUILTIN_TOOL_PATTERN, MCP_TOOL_PATTERN } from '@skills/contracts';
 import { XIcon } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -34,6 +34,8 @@ interface ToolsFieldProps {
 export function ToolsField({ value, onChange, error }: ToolsFieldProps) {
   const [entry, setEntry] = useState('');
   const [entryError, setEntryError] = useState<string | null>(null);
+  // The selection before "Inherit all tools" was switched on, restored when it is switched off.
+  const stashed = useRef<string[]>([]);
   const tools = value ?? [];
   const custom = tools.filter((tool) => !COMMON_TOOLS.some((c) => c === tool));
   const missing = value !== null && value.length === 0;
@@ -60,7 +62,17 @@ export function ToolsField({ value, onChange, error }: ToolsFieldProps) {
     <fieldset className="flex flex-col gap-3">
       <legend className="mb-1 text-sm font-medium">{t.tools}</legend>
       <Label className="flex items-center gap-2">
-        <Checkbox checked={value === null} onCheckedChange={(on) => onChange(on ? null : [])} />
+        <Checkbox
+          checked={value === null}
+          onCheckedChange={(on) => {
+            if (on) {
+              stashed.current = tools;
+              onChange(null);
+            } else {
+              onChange(stashed.current);
+            }
+          }}
+        />
         {t.inheritTools}
       </Label>
       {value !== null && (

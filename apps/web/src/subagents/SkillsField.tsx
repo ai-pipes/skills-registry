@@ -24,7 +24,7 @@ export function SkillsField({ value, onChange, error }: SkillsFieldProps) {
     const timer = setTimeout(() => setQ(input.trim()), SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [input]);
-  const skills = useSkills({ status: 'active', q });
+  const skills = useSkills({ status: 'active', q, enabled: q !== '' });
   const searching = q !== '';
   const suggestions = (skills.data ?? []).filter((s) => !value.includes(s.slug)).slice(0, 8);
 

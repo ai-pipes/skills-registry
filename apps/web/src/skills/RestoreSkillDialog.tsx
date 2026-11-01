@@ -121,7 +121,7 @@ export function RestoreSkillDialog({
         {error !== null && (
           <ErrorAlert
             error={error}
-            message={isApiError(error) ? strings.skill.errors[error.code] : undefined}
+            message={isApiError(error) ? texts.errors[error.code] : undefined}
           />
         )}
       </DialogContent>

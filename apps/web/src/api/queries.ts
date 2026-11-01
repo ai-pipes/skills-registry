@@ -80,10 +80,13 @@ export function useSkills({
   status,
   q,
   folder,
+  enabled = true,
 }: {
   status: SkillStatusFilter;
   q: string;
   folder?: string | null;
+  /** False: do not fetch (the previous data, if any, is still shown). */
+  enabled?: boolean;
 }) {
   return useQuery({
     queryKey: queryKeys.skillList(status, q, folder ?? null),
@@ -94,6 +97,7 @@ export function useSkills({
       return api.get(`/api/skills?${params}`, SkillSummary.array());
     },
     placeholderData: (previous) => previous,
+    enabled,
   });
 }
 

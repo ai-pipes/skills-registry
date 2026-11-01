@@ -121,6 +121,12 @@ export const strings = {
     restoreFolderTitle: (name: string) =>
       `Folder “${name}” is archived: restore the folder or move the subagent to another folder`,
     restoreFolderAndSubagent: 'Restore folder and subagent',
+    errors: {
+      folder_archived: 'Folder is archived: choose another one',
+      folder_not_found: 'Folder not found: choose another one',
+      subagent_not_found: 'Subagent not found: it may have been deleted',
+      subagent_archived: 'Subagent is archived: restore it first',
+    } as Record<string, string>,
     model: 'Model',
     tools: 'Tools',
     allTools: 'All tools',
