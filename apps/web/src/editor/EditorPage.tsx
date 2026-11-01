@@ -1,11 +1,11 @@
 import { SkillView } from '@skills/contracts';
 import { FileIcon, FilePlusIcon, Trash2Icon, TriangleAlertIcon } from 'lucide-react';
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import { Link, useBlocker, useNavigate, useParams, useSearchParams } from 'react-router';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { notify } from '@/lib/notify.ts';
 import { api } from '@/api/client.ts';
 import { isApiError } from '@/api/errors.ts';
-import { isUnauthorizedRedirect, useAuth } from '@/auth/AuthProvider.tsx';
+import { useAuth } from '@/auth/AuthProvider.tsx';
 import {
   fileUrl,
   MAX_INLINE_FILE_BYTES,
@@ -14,7 +14,6 @@ import {
   useSkill,
   useSkillFile,
 } from '@/api/queries.ts';
-import { ConfirmDialog } from '@/components/ConfirmDialog.tsx';
 import { EmptyState } from '@/components/EmptyState.tsx';
 import { ErrorAlert } from '@/components/ErrorAlert.tsx';
 import { Badge } from '@/components/ui/badge';
@@ -32,7 +31,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils.ts';
-import { useUnsavedChanges } from '@/lib/unsavedChanges.ts';
+import { useLeaveGuard } from '@/lib/useLeaveGuard.tsx';
 import { strings } from '@/strings.ts';
 import { buildUpload } from './buildUpload.ts';
 import { CodeEditor } from './CodeEditor.tsx';
@@ -209,27 +208,14 @@ function SkillEditor({
     [draftName],
   );
 
-  useEffect(() => {
-    if (!dirty) return undefined;
-    const onBeforeUnload = (e: BeforeUnloadEvent) => e.preventDefault();
-    window.addEventListener('beforeunload', onBeforeUnload);
-    return () => window.removeEventListener('beforeunload', onBeforeUnload);
-  }, [dirty]);
-
-  // Lets the shell's "Sign out" ask first too (it is not a route change of this page).
-  useUnsavedChanges(dirty);
-
   // Let through without asking: the login redirect after a 401 (the draft is stored and comes
-  // back after it) and the logout's own redirect (the shell already asked, see above).
-  const blocker = useBlocker(
-    ({ currentLocation, nextLocation }) =>
-      dirtyRef.current &&
-      !doneRef.current &&
-      !isUnauthorizedRedirect(nextLocation.state) &&
-      !draftsFrozen() &&
-      nextLocation.pathname !== currentLocation.pathname,
-  );
-  const leaveRef = useRef(false);
+  // back after it) and the logout's own redirect.
+  const leaveDialog = useLeaveGuard({
+    dirty,
+    doneRef,
+    allowLeave: draftsFrozen,
+    onLeave: () => clearDraft(draftName),
+  });
 
   function setFileText(path: string, text: string) {
     setFiles((prev) =>
@@ -673,24 +659,7 @@ function SkillEditor({
         </div>
       </form>
 
-      <ConfirmDialog
-        open={blocker.state === 'blocked'}
-        onOpenChange={(open) => {
-          if (open || blocker.state !== 'blocked') return;
-          if (leaveRef.current) blocker.proceed();
-          else blocker.reset();
-          leaveRef.current = false;
-        }}
-        title={t.leaveTitle}
-        description={t.leaveDescription}
-        confirmLabel={t.leaveConfirm}
-        destructive
-        onConfirm={() => {
-          doneRef.current = true;
-          leaveRef.current = true;
-          clearDraft(draftName);
-        }}
-      />
+      {leaveDialog}
     </div>
   );
 }

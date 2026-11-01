@@ -320,10 +320,7 @@ export function useSubagent(slug: string, version?: number) {
   });
 }
 
-/**
- * `GET /api/subagents/:slug/history`, newest first as the server sends it.
- * @public Consumed by the editor, history and diff pages that come next.
- */
+/** `GET /api/subagents/:slug/history`, newest first as the server sends it. */
 export function useSubagentHistory(slug: string) {
   return useQuery({
     queryKey: queryKeys.subagentHistory(slug),
@@ -331,10 +328,7 @@ export function useSubagentHistory(slug: string) {
   });
 }
 
-/**
- * `GET /api/subagents/:slug/diff?from=&to=`.
- * @public Consumed by the editor, history and diff pages that come next.
- */
+/** `GET /api/subagents/:slug/diff?from=&to=`. */
 export function useSubagentDiff(slug: string, from: number, to: number, enabled = true) {
   return useQuery({
     queryKey: queryKeys.subagentDiff(slug, from, to),
@@ -359,10 +353,7 @@ function useInvalidateSubagent() {
     ]);
 }
 
-/**
- * `POST /api/subagents`.
- * @public Consumed by the editor, history and diff pages that come next.
- */
+/** `POST /api/subagents`. */
 export function useCreateSubagent() {
   const invalidate = useInvalidateSubagent();
   return useMutation({
@@ -371,10 +362,7 @@ export function useCreateSubagent() {
   });
 }
 
-/**
- * `PUT /api/subagents/:slug`: a new version on top of `baseVersion`.
- * @public Consumed by the editor, history and diff pages that come next.
- */
+/** `PUT /api/subagents/:slug`: a new version on top of `baseVersion`. */
 export function usePublishSubagent(slug: string) {
   const invalidate = useInvalidateSubagent();
   return useMutation({
@@ -386,7 +374,6 @@ export function usePublishSubagent(slug: string) {
 
 /**
  * `POST /api/subagents/:slug/rollback`: a new version restored from `toVersion`.
- * @public Consumed by the editor, history and diff pages that come next.
  */
 export function useRollbackSubagent(slug: string) {
   const invalidate = useInvalidateSubagent();
