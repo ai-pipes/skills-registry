@@ -134,8 +134,16 @@ function SubagentEditor({
   const [folderError, setFolderError] = useState<string | null>(null);
   const doneRef = useRef(false);
   const leaveDialog = useLeaveGuard({ dirty, doneRef });
+  const target = saveError === null ? null : classifyError(saveError, mode, isNew);
+
+  /** Editing the field a server error is shown under dismisses that error. */
+  function dismissErrorOf(field: ErrorTarget) {
+    if (target === field) setSaveError(null);
+  }
 
   function editForm(patch: Partial<SubagentForm>) {
+    if ('tools' in patch) dismissErrorOf('tools');
+    if ('skills' in patch) dismissErrorOf('skills');
     const next = { ...form, ...patch };
     setForm(next);
     setText(serializeSubagentForm(next));
@@ -194,7 +202,6 @@ function SubagentEditor({
     }
   }
 
-  const target = saveError === null ? null : classifyError(saveError, mode, isNew);
   const known = saveError === null ? null : errorText(saveError);
   const fieldMessage = known
     ? known.detail
@@ -245,14 +252,16 @@ function SubagentEditor({
               {t.slugHint}
             </p>
             {slugError && <FieldError id="subagent-slug-error">{slugError}</FieldError>}
-            <Label>{t.folder}</Label>
+            <Label htmlFor="subagent-folder">{t.folder}</Label>
             <FolderPicker
+              id="subagent-folder"
               folders={folders}
               value={folderInput}
               label={t.folder}
               onChange={(v) => {
                 setFolderInput(v);
                 setFolderError(null);
+                dismissErrorOf('folder');
                 setDirty(true);
               }}
             />

@@ -84,7 +84,7 @@ export function MoveSkillDialog({
         {move.isError && (
           <ErrorAlert
             error={move.error}
-            message={isApiError(move.error) ? strings.skill.errors[move.error.code] : undefined}
+            message={isApiError(move.error) ? texts.errors[move.error.code] : undefined}
           />
         )}
         <DialogFooter>

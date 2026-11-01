@@ -1,7 +1,7 @@
 import { EditorView } from '@codemirror/view';
 import { act, screen, waitFor, within } from '@testing-library/react';
 import type { SubagentView, VersionRef } from '@skills/contracts';
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
 import { z } from 'zod';
 import { describe, expect, it } from 'vite-plus/test';
 import { routes } from '@/app/routes.tsx';
@@ -85,6 +85,8 @@ function setEditorText(view: EditorView, text: string) {
 }
 
 const NEW = '/subagents/new';
+const EXPECTED_HOSTILE =
+  '---\nname: code-reviewer\ndescription: |-\n  Use when: "quoted" # x\n  second line\nmodel: sonnet\n---\n---\nnot frontmatter\n---\ntext\n';
 const EDIT = '/subagents/code-reviewer/edit';
 
 async function fillNew(user: ReturnType<typeof renderWithApp>['user'], slug = 'devops') {
@@ -191,6 +193,104 @@ describe('creating a subagent', () => {
   });
 });
 
+describe('field errors and fields', () => {
+  it('editing Skills dismisses the unknown_skill error under it', async () => {
+    const b = backend();
+    b.answers.push(() => errorResponse(422, 'unknown_skill', 'unknown skill "ghost"'));
+    const { user } = renderWithApp(routes, { route: NEW });
+    await fillNew(user);
+    await user.click(screen.getByRole('button', { name: 'Publish' }));
+    const skills = await screen.findByRole('group', { name: 'Skills' });
+    expect(await within(skills).findByText(/ghost/)).toBeTruthy();
+
+    await user.type(screen.getByRole('textbox', { name: 'Skills' }), 'review');
+    await user.click(await screen.findByRole('button', { name: /code-review/ }));
+    expect(within(skills).queryByText(/ghost/)).toBeNull();
+  });
+
+  it('editing Tools dismisses the tools error under it', async () => {
+    const b = backend();
+    b.answers.push(() =>
+      errorResponse(422, 'invalid_frontmatter', 'frontmatter "tools" has an invalid tool name "x"'),
+    );
+    const { user } = renderWithApp(routes, { route: NEW });
+    await fillNew(user);
+    await user.click(screen.getByRole('checkbox', { name: 'Inherit all tools' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Read' }));
+    await user.click(screen.getByRole('button', { name: 'Publish' }));
+    const tools = await screen.findByRole('group', { name: 'Tools' });
+    expect(await within(tools).findByText(/invalid tool name/)).toBeTruthy();
+
+    await user.click(screen.getByRole('checkbox', { name: 'Bash' }));
+    expect(within(tools).queryByText(/invalid tool name/)).toBeNull();
+  });
+
+  it('changing the Folder dismisses the folder error under it', async () => {
+    const b = backend();
+    b.answers.push(() => errorResponse(409, 'folder_archived'));
+    const { user } = renderWithApp(routes, { route: NEW });
+    await fillNew(user);
+    await user.click(screen.getByRole('button', { name: 'Publish' }));
+    expect(await screen.findByText(/Folder is archived/)).toBeTruthy();
+
+    await user.click(screen.getByRole('combobox', { name: 'Folder' }));
+    await user.click(await screen.findByRole('option', { name: 'DevOps' }));
+    expect(screen.queryByText(/Folder is archived/)).toBeNull();
+  });
+
+  it('the visible Folder label is bound to the picker', async () => {
+    backend();
+    renderWithApp(routes, { route: NEW });
+    const labelled = await screen.findByLabelText('Folder');
+    expect(labelled.getAttribute('role')).toBe('combobox');
+  });
+
+  it('switching "Inherit all tools" on and off restores the previous selection', async () => {
+    backend();
+    const { user } = renderWithApp(routes, { route: NEW });
+    await fillNew(user);
+    await user.click(screen.getByRole('checkbox', { name: 'Inherit all tools' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Bash' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Read' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Inherit all tools' }));
+    expect(screen.queryByRole('checkbox', { name: 'Bash' })).toBeNull();
+    await user.click(screen.getByRole('checkbox', { name: 'Inherit all tools' }));
+    expect(screen.getByRole('checkbox', { name: 'Bash' }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
+    expect(screen.getByRole('checkbox', { name: 'Read' }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
+    expect(screen.getByRole('checkbox', { name: 'Grep' }).getAttribute('aria-checked')).toBe(
+      'false',
+    );
+  });
+
+  it('does not list skills until something is typed, and keeps suggestions while a new query loads', async () => {
+    const queries: string[] = [];
+    backend();
+    server.use(
+      http.get('/api/skills', async ({ request }) => {
+        const q = new URL(request.url).searchParams.get('q') ?? '';
+        queries.push(q);
+        if (q === 'reviews') await delay(600);
+        return HttpResponse.json([skillSummary]);
+      }),
+    );
+    const { user } = renderWithApp(routes, { route: NEW });
+    await fillNew(user);
+    expect(queries).toEqual([]);
+
+    const box = screen.getByRole('textbox', { name: 'Skills' });
+    await user.type(box, 'review');
+    await screen.findByRole('button', { name: /code-review/ });
+    await user.type(box, 's');
+    await waitFor(() => expect(queries).toContain('reviews'));
+    expect(screen.getByRole('button', { name: /code-review/ })).toBeTruthy();
+    expect(queries).not.toContain('');
+  });
+});
+
 describe('Form and Raw tabs', () => {
   it('Raw text with an unknown key cannot switch to Form and shows the error', async () => {
     backend();
@@ -236,6 +336,7 @@ describe('Form and Raw tabs', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Publish' }));
     await waitFor(() => expect(b.sent).toHaveLength(1));
+    expect(b.sent[0]?.body['content']).toBe(EXPECTED_HOSTILE);
   });
 });
 

@@ -16,6 +16,7 @@ import {
 } from '@/api/queries.ts';
 import { EmptyState } from '@/components/EmptyState.tsx';
 import { ErrorAlert } from '@/components/ErrorAlert.tsx';
+import { PageSkeleton } from '@/components/PageSkeleton.tsx';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -660,15 +661,6 @@ function SkillEditor({
       </form>
 
       {leaveDialog}
-    </div>
-  );
-}
-
-function PageSkeleton() {
-  return (
-    <div className="flex flex-col gap-4" aria-busy="true" aria-label={strings.common.loading}>
-      <Skeleton className="h-8 w-1/3" />
-      <Skeleton className="h-80 w-full" />
     </div>
   );
 }
