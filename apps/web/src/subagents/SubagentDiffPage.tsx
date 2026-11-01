@@ -21,7 +21,7 @@ function PermissionsChanged({ added, removed }: { added: string[]; removed: stri
   return (
     <section
       aria-label={strings.history.permissionsChanged}
-      className="rounded-lg border border-amber-500/50 bg-amber-500/10 p-3"
+      className="rounded-lg border border-destructive/50 bg-destructive/10 p-3"
     >
       <h2 className="mb-2 text-sm font-medium">{strings.history.permissionsChanged}</h2>
       <ul className="flex flex-col gap-1 font-mono text-sm">

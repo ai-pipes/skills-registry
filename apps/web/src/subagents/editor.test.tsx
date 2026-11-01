@@ -239,6 +239,20 @@ describe('Form and Raw tabs', () => {
   });
 });
 
+describe('editing a subagent whose stored content does not parse', () => {
+  it('opens in Raw with the original text and the error, and keeps the Form blocked', async () => {
+    const broken = '---\nname: code-reviewer\ntools: [unclosed\n---\nBody.';
+    backend({ ...subagentView, content: broken });
+    const { user } = renderWithApp(routes, { route: EDIT });
+    const view = await findEditor();
+    expect(view.state.doc.toString()).toBe(broken);
+    expect((await screen.findByText(/Cannot switch to the form/)).textContent).toBeTruthy();
+    await user.click(screen.getByRole('tab', { name: 'Form' }));
+    expect(screen.queryByLabelText('Description')).toBeNull();
+    expect(screen.getByRole('tab', { name: 'Raw' }).getAttribute('aria-selected')).toBe('true');
+  });
+});
+
 describe('editing a subagent', () => {
   it('publishes on top of the current version', async () => {
     const b = backend();

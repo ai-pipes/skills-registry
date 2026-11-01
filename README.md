@@ -296,7 +296,7 @@ list is pinned there, while the listed skills are loaded over MCP at run time (l
 
 ```bash
 skills-registry subagent list [--folder <slug>] [--installed] [-g]
-skills-registry subagent install devops reviewer -a claude-code     # or --folder <slug>; -g — ~/.claude/agents
+skills-registry subagent install devops reviewer -a claude-code     # or --folder <slug>; -g — ~/.claude/agents; --yes accepts a changed tools set
 skills-registry subagent update [<slug>...] [--yes]
 skills-registry subagent uninstall devops
 ```

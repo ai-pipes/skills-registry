@@ -22,7 +22,8 @@ const options = {
   yes: { type: 'boolean' },
 } as const;
 
-type Opts = { force: boolean; yes: boolean; mcpServer: string };
+/** `mcpServer` is set only when `--mcp-server` was given; otherwise the recorded name or `skills`. */
+type Opts = { force: boolean; yes: boolean; mcpServer: string | undefined };
 
 const summary = (v: SubagentView) =>
   `model ${v.model}; tools ${toolsText(v.tools)}; skills ${v.skills.length > 0 ? v.skills.join(', ') : 'none'}`;
@@ -31,11 +32,11 @@ async function installOne(s: Scope, slug: string, o: Opts): Promise<boolean> {
   const { env } = s;
   const view = await s.client.getSubagent(slug);
   if (view === null) {
-    env.err(`error: subagent ${slug} not found`);
+    env.err(`error: subagent ${safe(slug)} not found`);
     return false;
   }
   if (view.status === 'archived') {
-    env.err(`error: subagent ${slug} is archived`);
+    env.err(`error: subagent ${safe(slug)} is archived`);
     return false;
   }
   const path = join(s.dir, `${slug}.md`);
@@ -46,23 +47,28 @@ async function installOne(s: Scope, slug: string, o: Opts): Promise<boolean> {
   }
   if (state !== 'absent' && state !== 'foreign') {
     if (state.version === view.version) {
-      env.out(`${slug} v${view.version} is already installed`);
+      env.out(`${safe(slug)} v${view.version} is already installed`);
       return true;
     }
     const oldText = await readFile(path, 'utf8');
-    return applyUpdate(s, state, view, { yes: o.yes, mcpServer: o.mcpServer, oldText });
+    return applyUpdate(s, slug, state, view, {
+      yes: o.yes,
+      mcpServer: o.mcpServer ?? state.mcpServer,
+      oldText,
+    });
   }
-  const text = renderSubagent(view, o.mcpServer);
+  const mcpServer = o.mcpServer ?? 'skills';
+  const text = renderSubagent(view, mcpServer);
   await writeSubagentFile(s.dir, slug, text);
   s.manifest.subagents[slug] = {
     server: s.server,
     version: view.version,
     sha256: sha256(new TextEncoder().encode(text)),
-    mcpServer: o.mcpServer,
+    mcpServer,
     tools: view.tools,
   };
   await writeInstalled(s.dir, s.manifest);
-  env.out(`installed ${slug} v${view.version} (${summary(view)}) → ${path}`);
+  env.out(`installed ${safe(slug)} v${view.version} (${summary(view)}) → ${safe(path)}`);
   return true;
 }
 
@@ -71,7 +77,8 @@ export const subagentInstall: Command = async (args, env) => {
   const { values, positionals } = parse(args, options, { min: 0, max: Infinity });
   const slugs = positionals.map((p) => checkSlug(p, 'subagent'));
   if (slugs.length === 0 && values.folder === undefined) throw new UsageError('missing argument');
-  const mcpServer = checkMcpServer(values['mcp-server'] ?? 'skills');
+  const given = values['mcp-server'];
+  const mcpServer = given === undefined ? undefined : checkMcpServer(given);
   selectSubagentTarget(values.agent ?? [], env);
   const s = await openScope(env, values.global ?? false);
   const o: Opts = { force: values.force ?? false, yes: values.yes ?? false, mcpServer };
@@ -89,7 +96,7 @@ export const subagentInstall: Command = async (args, env) => {
     try {
       return await installOne(s, slug, o);
     } catch (e) {
-      env.err(`error: ${slug}: ${safe(e instanceof Error ? e.message : String(e))}`);
+      env.err(`error: ${safe(slug)}: ${safe(e instanceof Error ? e.message : String(e))}`);
       return false;
     }
   });

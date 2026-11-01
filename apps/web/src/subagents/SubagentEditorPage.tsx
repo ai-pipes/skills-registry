@@ -95,6 +95,8 @@ interface EditorProps {
   slug: string | undefined;
   initialText: string;
   initialForm: SubagentForm;
+  /** Why `initialText` does not parse into the form; the editor then opens in Raw mode. */
+  initialParseError?: string | undefined;
   /** The version the edit starts from; undefined when creating. */
   baseVersion: number | undefined;
   initialFolder: string;
@@ -106,6 +108,7 @@ function SubagentEditor({
   slug,
   initialText,
   initialForm,
+  initialParseError,
   baseVersion,
   initialFolder,
   folders,
@@ -115,7 +118,7 @@ function SubagentEditor({
   const create = useCreateSubagent();
   const publish = usePublishSubagent(slug ?? '');
 
-  const [mode, setMode] = useState<Mode>('form');
+  const [mode, setMode] = useState<Mode>(initialParseError === undefined ? 'form' : 'raw');
   const [text, setText] = useState(initialText);
   const [form, setForm] = useState(initialForm);
   const [slugInput, setSlugInput] = useState('');
@@ -124,7 +127,9 @@ function SubagentEditor({
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<unknown>(null);
-  const [switchError, setSwitchError] = useState<string | null>(null);
+  const [switchError, setSwitchError] = useState<string | null>(
+    initialParseError === undefined ? null : t.cannotSwitch(initialParseError),
+  );
   const [slugError, setSlugError] = useState<string | null>(null);
   const [folderError, setFolderError] = useState<string | null>(null);
   const doneRef = useRef(false);
@@ -377,6 +382,7 @@ function EditSubagent({ slug }: { slug: string }) {
       slug={slug}
       initialText={start.content}
       initialForm={parsed.ok ? parsed.value : emptySubagentForm(slug)}
+      initialParseError={parsed.ok ? undefined : parsed.error}
       baseVersion={start.version}
       initialFolder={start.folder.slug}
       folders={[]}

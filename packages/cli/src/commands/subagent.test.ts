@@ -16,7 +16,8 @@ const SERVER = 'https://r.example';
 type Def = Record<string, unknown>;
 
 /** A fake registry: `agents[slug]` is the latest view (overrides of the fixture). */
-function setup(agents: Record<string, Def>) {
+/** `alias[asked]` makes the fake server answer a request for `asked` with another slug's view. */
+function setup(agents: Record<string, Def>, alias: Record<string, string> = {}) {
   const reg = recordingFetch((r) => {
     const url = new URL(r.url);
     const all = Object.entries(agents).map(([slug, over]) => subagentView(slug, over));
@@ -32,7 +33,8 @@ function setup(agents: Record<string, Def>) {
       );
     }
     const m = /^\/api\/subagents\/([^/]+)$/.exec(url.pathname);
-    const found = all.find((v) => v.slug === m?.[1]);
+    const asked = m?.[1] ?? '';
+    const found = all.find((v) => v.slug === (alias[asked] ?? asked));
     return found
       ? json(200, found)
       : json(404, { error: { code: 'not_found', message: 'no such subagent' } });
@@ -49,7 +51,7 @@ function setup(agents: Record<string, Def>) {
   const dir = join(env.cwd, '.claude', 'agents');
   const file = (slug: string) => join(dir, `${slug}.md`);
   const text = (slug: string) => readFileSync(file(slug), 'utf8');
-  return { env, run, agents, dir, file, text, requests: reg.requests };
+  return { env, run, agents, alias, dir, file, text, requests: reg.requests };
 }
 
 const A = ['-a', 'claude-code'];
@@ -138,6 +140,35 @@ describe('subagent install', () => {
     expect(await s.run('install', 'devops', '--force', ...A)).toBe(0);
     expect(s.text('devops')).toContain('name: devops');
     expect((await readInstalled(s.dir)).subagents['devops']?.version).toBe(1);
+  });
+
+  it('keeps the recorded MCP server when installing over an older version', async () => {
+    const s = setup({ devops: { skills: ['a'] } });
+    await s.run('install', 'devops', '--mcp-server', 'registry', ...A);
+    s.agents['devops'] = { version: 2, skills: ['a'] };
+    expect(await s.run('install', 'devops', ...A)).toBe(0);
+    expect(s.text('devops')).toContain('`registry` MCP server');
+    expect((await readInstalled(s.dir)).subagents['devops']?.mcpServer).toBe('registry');
+    s.agents['devops'] = { version: 3, skills: ['a'] };
+    await s.run('install', 'devops', '--mcp-server', 'other', ...A);
+    expect((await readInstalled(s.dir)).subagents['devops']?.mcpServer).toBe('other');
+  });
+
+  it('rejects a view whose slug differs from the requested one', async () => {
+    const s = setup({ a: {}, b: {} }, { a: 'b' });
+    expect(await s.run('install', 'a', ...A)).toBe(1);
+    expect(s.env.stderr.join('\n')).toContain('error: a: the server answered with subagent b');
+    expect(existsSync(s.file('a'))).toBe(false);
+    expect(existsSync(s.file('b'))).toBe(false);
+  });
+
+  it('prints a server-supplied slug without control characters', async () => {
+    const s = setup({ 'x\u001by': { folder: ENG.folder } });
+    s.alias['x\u001by'] = 'x\u001by';
+    await s.run('install', '--folder', 'eng', ...A);
+    const out = s.env.stdout.join('\n') + s.env.stderr.join('\n');
+    expect(out).toContain('x?y');
+    expect(out).not.toContain('\u001b');
   });
 
   it('uses --mcp-server and records it', async () => {
@@ -266,6 +297,17 @@ describe('subagent update', () => {
     s.agents['devops'] = { version: 2, skills: ['a', 'b'] };
     await s.run('update');
     expect(s.text('devops')).toContain('`registry` MCP server');
+  });
+
+  it('does not touch another subagent when the server answers with a different slug', async () => {
+    const s = setup({ a: {}, b: {} });
+    await s.run('install', 'a', 'b', ...A);
+    const before = s.text('b');
+    s.agents['b'] = { version: 2, content: '---\nname: b\ndescription: evil\n---\nx\n' };
+    s.alias['a'] = 'b';
+    expect(await s.run('update', 'a')).toBe(1);
+    expect(s.env.stderr.join('\n')).toContain('error: a: the server answered with subagent b');
+    expect(s.text('b')).toBe(before);
   });
 
   it('fails for a slug that is not installed, missing or archived', async () => {
