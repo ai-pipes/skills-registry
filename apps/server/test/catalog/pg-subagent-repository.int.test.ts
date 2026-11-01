@@ -240,6 +240,21 @@ describe('PgSubagentRepository', () => {
     expect(await pg.sql`select 1 from platform.outbox`).toHaveLength(0);
   });
 
+  it('refuses to restore a subagent into an archived folder', async () => {
+    const folder = await devops();
+    const subagent = await saved('reviewer', {}, folder.id);
+    const toArchive = (await repo.findById(subagent.id))!;
+    toArchive.archive(NOW);
+    await repo.save(toArchive, new Map());
+    folder.archive(NOW);
+    await folders.archiveWithSkills(folder, [], []);
+
+    const restored = (await repo.findById(subagent.id))!;
+    restored.restore(NOW);
+    await expect(repo.save(restored, new Map())).rejects.toMatchObject({ code: 'folder_archived' });
+    expect(await repo.findById(subagent.id)).toMatchObject({ status: 'archived' });
+  });
+
   it('listSummaries filters by status and folder in one query, with the latest version', async () => {
     const folder = await devops();
     await saved('alpha', { tools: ['Read'], model: 'sonnet', skills: ['x'] });

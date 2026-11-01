@@ -7,7 +7,7 @@ import { safe } from '../output.ts';
 import { applyUpdate } from '../subagents/apply.ts';
 import { inspectSubagent } from '../subagents/installed.ts';
 import { openScope, type Scope } from '../subagents/scope.ts';
-import { checkSlug } from './install.ts';
+import { checkSlug } from '../slug.ts';
 
 const options = {
   global: { type: 'boolean', short: 'g' },
@@ -32,12 +32,12 @@ async function updateOne(s: Scope, slug: string, yes: boolean): Promise<boolean>
   const path = join(s.dir, `${slug}.md`);
   const state = await inspectSubagent(s.dir, slug, s.server, s.manifest);
   if (state === 'absent') {
-    env.err(`error: ${path} is missing; reinstall with install`);
+    env.err(`error: ${safe(path)} is missing; reinstall with install`);
     return false;
   }
   if (state === 'foreign') {
     env.err(
-      `conflict: ${path} was not installed by skills-registry or was modified; reinstall with install --force`,
+      `conflict: ${safe(path)} was not installed by skills-registry or was modified; reinstall with install --force`,
     );
     return false;
   }

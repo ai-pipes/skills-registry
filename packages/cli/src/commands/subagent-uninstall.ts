@@ -7,7 +7,7 @@ import { safe } from '../output.ts';
 import { inspectSubagent, writeInstalled } from '../subagents/installed.ts';
 import { openScope, type Scope } from '../subagents/scope.ts';
 import { selectSubagentTarget } from '../subagents/target.ts';
-import { checkSlug } from './install.ts';
+import { checkSlug } from '../slug.ts';
 
 const options = {
   global: { type: 'boolean', short: 'g' },
@@ -20,13 +20,13 @@ async function uninstallOne(s: Scope, slug: string): Promise<boolean> {
   const path = join(s.dir, `${slug}.md`);
   const state = await inspectSubagent(s.dir, slug, s.server, s.manifest);
   if (state === 'foreign') {
-    s.env.err(`skipped ${path}: not installed by skills-registry`);
+    s.env.err(`skipped ${safe(path)}: not installed by skills-registry`);
     return false;
   }
   if (state === 'absent') s.env.out(`${safe(slug)} is not installed`);
   else {
     await rm(path, { force: true });
-    s.env.out(`removed ${path}`);
+    s.env.out(`removed ${safe(path)}`);
   }
   if (Object.hasOwn(s.manifest.subagents, slug)) {
     delete s.manifest.subagents[slug];

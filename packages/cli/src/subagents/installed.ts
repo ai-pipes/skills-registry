@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { checkSlug } from '../commands/install.ts';
+import { checkSlug } from '../slug.ts';
 import type { CliEnv } from '../env.ts';
 import { isNotFound } from '../fs-errors.ts';
 import { sha256 } from '../manifest.ts';

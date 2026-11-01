@@ -67,14 +67,22 @@ describe('parseSubagentMd', () => {
     const pad = MAX_SUBAGENT_MD_BYTES - head.length;
     expect(parseSubagentMd(head + 'x'.repeat(pad)).ok).toBe(true);
     rejected(head + 'x'.repeat(pad + 1), 'limit_exceeded');
-    // 'é' is 2 bytes: half the characters, still over the limit
-    rejected(head + 'é'.repeat(pad / 2 + 1), 'limit_exceeded');
-    expect(parseSubagentMd(head + 'é'.repeat(pad / 2)).ok).toBe(true);
+    // 'é' is 2 bytes: half the characters, still over the limit (pad may be odd: top up with 'x')
+    const pairs = Math.floor(pad / 2);
+    const rest = 'x'.repeat(pad - pairs * 2);
+    rejected(head + 'é'.repeat(pairs + 1) + rest, 'limit_exceeded');
+    expect(parseSubagentMd(head + 'é'.repeat(pairs) + rest).ok).toBe(true);
   });
 
   it('keeps a quoted description with a newline as one literal string', () => {
     const r = parseSubagentMd(file('name: devops\ndescription: "a\\ntools: Bash"'));
     expect(r.ok && r.value.description).toBe('a\ntools: Bash');
+    expect(r.ok && r.value.tools).toBeNull();
+  });
+
+  it('keeps a body that starts with --- in the body', () => {
+    const r = parseSubagentMd(file('name: devops\ndescription: d') + '---\ntools: Bash');
+    expect(r.ok && r.value.body).toBe('---\ntools: Bash');
     expect(r.ok && r.value.tools).toBeNull();
   });
 

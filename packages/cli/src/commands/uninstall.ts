@@ -4,7 +4,7 @@ import type { CliEnv, Command } from '../env.ts';
 import { AGENTS, type Agent, selectAgents } from '../install/agents.ts';
 import { inSequence, planInstall } from '../install/layout.ts';
 import { inspectDir, inspectLink } from '../install/marker.ts';
-import { checkSlug } from './install.ts';
+import { checkSlug } from '../slug.ts';
 
 const options = {
   global: { type: 'boolean', short: 'g' },

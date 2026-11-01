@@ -2,7 +2,7 @@ import { parse, UsageError } from '../args.ts';
 import type { Command } from '../env.ts';
 import { safe } from '../output.ts';
 import { inspectSubagent } from '../subagents/installed.ts';
-import { openScope } from '../subagents/scope.ts';
+import { openClient, openScope } from '../subagents/scope.ts';
 
 const options = {
   global: { type: 'boolean', short: 'g' },
@@ -21,9 +21,9 @@ export const subagentList: Command = async (args, env) => {
   if (values.installed === true && values.folder !== undefined) {
     throw new UsageError('--folder cannot be combined with --installed');
   }
-  const s = await openScope(env, values.global ?? false);
   if (values.installed !== true) {
-    const agents = await s.client.listSubagents(
+    const { client } = await openClient(env);
+    const agents = await client.listSubagents(
       values.folder === undefined ? {} : { folder: values.folder },
     );
     for (const a of agents) {
@@ -31,6 +31,7 @@ export const subagentList: Command = async (args, env) => {
     }
     return 0;
   }
+  const s = await openScope(env, values.global ?? false);
   const registry = new Map(
     (await s.client.listSubagents({ status: 'all' })).map((a) => [a.slug, a]),
   );

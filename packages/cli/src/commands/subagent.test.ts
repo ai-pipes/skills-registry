@@ -171,6 +171,13 @@ describe('subagent install', () => {
     expect(out).not.toContain('\u001b');
   });
 
+  it('prints an error line for a server-supplied slug without control characters', async () => {
+    const s = setup({ 'x\u001by': { folder: ENG.folder } });
+    s.alias['x%1By'] = 'x\u001by'; // the server sees the percent-encoded slug
+    expect(await s.run('install', '--folder', 'eng', ...A)).toBe(1);
+    expect(s.env.stderr).toEqual(['error: x?y: invalid subagent slug "x?y"']);
+  });
+
   it('uses --mcp-server and records it', async () => {
     const s = setup({ devops: { skills: ['a'] } });
     await s.run('install', 'devops', '--mcp-server', 'registry', ...A);

@@ -11,7 +11,7 @@ import { checkMcpServer, openScope, type Scope } from '../subagents/scope.ts';
 import { selectSubagentTarget } from '../subagents/target.ts';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { checkSlug } from './install.ts';
+import { checkSlug } from '../slug.ts';
 
 const options = {
   global: { type: 'boolean', short: 'g' },
@@ -42,7 +42,9 @@ async function installOne(s: Scope, slug: string, o: Opts): Promise<boolean> {
   const path = join(s.dir, `${slug}.md`);
   const state = await inspectSubagent(s.dir, slug, s.server, s.manifest);
   if (state === 'foreign' && !o.force) {
-    env.err(`conflict: ${path} was not installed by skills-registry or was modified; use --force`);
+    env.err(
+      `conflict: ${safe(path)} was not installed by skills-registry or was modified; use --force`,
+    );
     return false;
   }
   if (state !== 'absent' && state !== 'foreign') {
