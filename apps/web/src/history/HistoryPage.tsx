@@ -1,3 +1,4 @@
+import type { SubagentVersionSummary } from '@skills/contracts';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { notify } from '@/lib/notify.ts';
@@ -13,23 +14,32 @@ import { formatDateTime, formatRelative } from '@/lib/format.ts';
 import { strings } from '@/strings.ts';
 import { shortSha } from '@/skills/source.ts';
 
-/** `/skills/:slug/history`: versions newest first, compare any two, roll back to one. */
-export function HistoryPage() {
-  const { slug = '' } = useParams();
+/** A version row; skills carry the GitHub commit they were imported from, subagents do not. */
+type HistoryVersion = SubagentVersionSummary & { sourceCommit?: string | null };
+
+interface VersionHistoryProps {
+  slug: string;
+  /** Path of the item's page, e.g. `/skills/code-review`; `/diff` is appended for Compare. */
+  base: string;
+  versions: HistoryVersion[];
+  backLabel: string;
+  conflictText: string;
+  /** Creates a version restored from `toVersion`, on top of `baseVersion`. */
+  rollback: (body: { toVersion: number; baseVersion: number }) => Promise<unknown>;
+}
+
+/** Versions newest first, compare any two, roll back to one. */
+export function VersionHistory({
+  slug,
+  base,
+  versions,
+  backLabel,
+  conflictText,
+  rollback,
+}: VersionHistoryProps) {
   const navigate = useNavigate();
-  const history = useHistory(slug);
-  const rollback = useRollback(slug);
   const [picked, setPicked] = useState<number[]>([]);
   const [conflict, setConflict] = useState(false);
-  const base = `/skills/${encodeURIComponent(slug)}`;
-
-  if (history.isError) return <ErrorAlert error={history.error} />;
-  if (history.data === undefined) {
-    return (
-      <Skeleton className="h-64 w-full" aria-busy="true" aria-label={strings.common.loading} />
-    );
-  }
-  const versions = history.data;
   const current = versions.reduce((max, v) => Math.max(max, v.number), 0);
 
   function toggle(n: number, on: boolean) {
@@ -44,7 +54,7 @@ export function HistoryPage() {
   async function doRollback(toVersion: number) {
     setConflict(false);
     try {
-      await rollback.mutateAsync({ toVersion, baseVersion: current });
+      await rollback({ toVersion, baseVersion: current });
     } catch (e) {
       if (isApiError(e) && e.status === 409) {
         setConflict(true); // history was refetched by the mutation's onSettled
@@ -60,7 +70,7 @@ export function HistoryPage() {
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-col gap-1">
           <Link to={base} className="text-sm text-muted-foreground underline">
-            {strings.history.backToSkill}
+            {backLabel}
           </Link>
           <h1 className="text-2xl font-semibold">{strings.history.title}</h1>
           <p className="font-mono text-sm text-muted-foreground">{slug}</p>
@@ -69,7 +79,7 @@ export function HistoryPage() {
           {strings.history.compare}
         </Button>
       </header>
-      {conflict && <ErrorAlert message={strings.history.conflict} />}
+      {conflict && <ErrorAlert message={conflictText} />}
       <ul className="flex flex-col divide-y rounded-lg border">
         {versions.map((v) => (
           <li key={v.number} className="flex flex-wrap items-start gap-3 p-3">
@@ -86,7 +96,7 @@ export function HistoryPage() {
                 {v.restoredFrom !== null && (
                   <Badge variant="secondary">{strings.history.restoredFrom(v.restoredFrom)}</Badge>
                 )}
-                {v.sourceCommit !== null && (
+                {v.sourceCommit != null && (
                   <Badge variant="outline">
                     {strings.history.fromGithub(shortSha(v.sourceCommit))}
                   </Badge>
@@ -129,5 +139,29 @@ export function HistoryPage() {
         ))}
       </ul>
     </div>
+  );
+}
+
+/** Placeholder of a history list while it loads. */
+export function HistorySkeleton() {
+  return <Skeleton className="h-64 w-full" aria-busy="true" aria-label={strings.common.loading} />;
+}
+
+/** `/skills/:slug/history`. */
+export function HistoryPage() {
+  const { slug = '' } = useParams();
+  const history = useHistory(slug);
+  const rollback = useRollback(slug);
+  if (history.isError) return <ErrorAlert error={history.error} />;
+  if (history.data === undefined) return <HistorySkeleton />;
+  return (
+    <VersionHistory
+      slug={slug}
+      base={`/skills/${encodeURIComponent(slug)}`}
+      versions={history.data}
+      backLabel={strings.history.backToSkill}
+      conflictText={strings.history.conflict}
+      rollback={rollback.mutateAsync}
+    />
   );
 }

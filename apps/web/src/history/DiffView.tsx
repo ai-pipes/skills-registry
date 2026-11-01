@@ -1,4 +1,5 @@
 import type { FileDiff } from '@skills/contracts';
+import type { ReactNode } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { useDiff } from '@/api/queries.ts';
 import { EmptyState } from '@/components/EmptyState.tsx';
@@ -6,6 +7,7 @@ import { ErrorAlert } from '@/components/ErrorAlert.tsx';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils.ts';
+import { parseVersion } from '@/lib/versionParam.ts';
 import { strings } from '@/strings.ts';
 import { parsePatch, type PatchLine } from './parsePatch.ts';
 
@@ -53,7 +55,7 @@ function FileBody({ diff }: { diff: FileDiff }) {
 }
 
 /** Per-file diff: status badge and patch; unchanged files collapse into one line. */
-function DiffView({ diffs }: { diffs: FileDiff[] }) {
+export function DiffView({ diffs }: { diffs: FileDiff[] }) {
   const changed = diffs.filter((d) => d.status !== 'unchanged');
   const unchanged = diffs.length - changed.length;
   return (
@@ -76,20 +78,30 @@ function DiffView({ diffs }: { diffs: FileDiff[] }) {
   );
 }
 
-function parseNo(raw: string | null): number | undefined {
-  return raw !== null && /^[1-9]\d{0,9}$/.test(raw) ? Number(raw) : undefined;
+export interface DiffRange {
+  from: number;
+  to: number;
 }
 
-/** `/skills/:slug/diff?from=&to=`. */
-export function DiffPage() {
-  const { slug = '' } = useParams();
+/** `?from=&to=` of a diff route; `undefined` unless both are valid version numbers. */
+export function useDiffRange(): DiffRange | undefined {
   const [params] = useSearchParams();
-  const from = parseNo(params.get('from'));
-  const to = parseNo(params.get('to'));
-  const range = from !== undefined && to !== undefined ? { from, to } : undefined;
-  const diff = useDiff(slug, range?.from ?? 0, range?.to ?? 0, range !== undefined);
-  const base = `/skills/${encodeURIComponent(slug)}`;
+  const from = parseVersion(params.get('from'));
+  const to = parseVersion(params.get('to'));
+  return from !== undefined && to !== undefined ? { from, to } : undefined;
+}
 
+interface DiffFrameProps<T> {
+  slug: string;
+  /** Path of the item's page, e.g. `/skills/code-review`. */
+  base: string;
+  range: DiffRange | undefined;
+  result: { isError: boolean; error: unknown; data: T | undefined };
+  children: (data: T) => ReactNode;
+}
+
+/** Header, bad-range / error / loading states around a diff page's body. */
+export function DiffFrame<T>({ slug, base, range, result, children }: DiffFrameProps<T>) {
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
       <header className="flex flex-col gap-1">
@@ -103,13 +115,25 @@ export function DiffPage() {
       </header>
       {!range ? (
         <EmptyState title={strings.history.badRange} />
-      ) : diff.isError ? (
-        <ErrorAlert error={diff.error} />
-      ) : diff.data === undefined ? (
+      ) : result.isError ? (
+        <ErrorAlert error={result.error} />
+      ) : result.data === undefined ? (
         <Skeleton className="h-40 w-full" aria-busy="true" aria-label={strings.common.loading} />
       ) : (
-        <DiffView diffs={diff.data} />
+        children(result.data)
       )}
     </div>
+  );
+}
+
+/** `/skills/:slug/diff?from=&to=`. */
+export function DiffPage() {
+  const { slug = '' } = useParams();
+  const range = useDiffRange();
+  const diff = useDiff(slug, range?.from ?? 0, range?.to ?? 0, range !== undefined);
+  return (
+    <DiffFrame slug={slug} base={`/skills/${encodeURIComponent(slug)}`} range={range} result={diff}>
+      {(diffs) => <DiffView diffs={diffs} />}
+    </DiffFrame>
   );
 }
