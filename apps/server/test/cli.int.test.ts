@@ -119,7 +119,7 @@ describe('cli users and tokens', () => {
     expect(role.code).toBe(2);
   });
 
-  it('reindex reports the number of indexed skills', async () => {
+  it('reindex reports the number of indexed documents', async () => {
     await seedSkills();
     const r = await cli(['reindex']);
     expect(r.code).toBe(0);

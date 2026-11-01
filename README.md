@@ -64,6 +64,10 @@ icons and styles are bundled.
 - **New skill** — skills are created only in the editor (the "New skill" button in the list): slug,
   `SKILL.md` with frontmatter (`name`, `description`); additional files can be added or
   uploaded. Existing skills are edited there too; every save is a new version.
+- **Subagents** — role definitions for Claude Code (a prompt, a tool whitelist, a model, and the
+  registry skills it loads over MCP): list with folder filter and search, a page with a copyable
+  install command, a form or raw editor, history and a diff that highlights changed permissions.
+  The skill page shows which subagents use it. See [Subagents](#subagents).
 - **Tokens** — your own tokens for agents. A new token and the ready-made `claude mcp add …` command
   are shown once and can be copied with a button. Copying to the clipboard works only over
   HTTPS or on `localhost`; over plain HTTP the text is selected and has to be copied manually
@@ -284,13 +288,32 @@ as a whole archive; limits: `SKILLS_REGISTRY_MAX_TARBALL_BYTES` (compressed arch
 and `SKILLS_REGISTRY_MAX_UNPACKED_BYTES` (unpacked, 1 GiB by default). `skills-registry` without
 arguments prints help.
 
+### Subagents
+
+A subagent is a `SUBAGENT.md` file (frontmatter `name`, `description`, optional `tools`, `model`,
+`skills`; the body is the role prompt). The CLI installs it as `.claude/agents/<slug>.md`; the tool
+list is pinned there, while the listed skills are loaded over MCP at run time (latest version).
+
+```bash
+skills-registry subagent list [--folder <slug>] [--installed] [-g]
+skills-registry subagent install devops reviewer -a claude-code     # or --folder <slug>; -g — ~/.claude/agents
+skills-registry subagent update [<slug>...] [--yes]
+skills-registry subagent uninstall devops
+```
+
+`-a/--agent` is the coding-agent target (only `claude-code` for subagents), `--mcp-server <name>` is the
+name the registry's MCP server has in Claude Code (default `skills`). An update that changes `tools` is
+printed as a diff and skipped (exit 1) unless you pass `--yes`. The CLI only touches files it installed
+(tracked in `.claude/agents/.skills-registry.json`); `install --force` overwrites a hand-written file.
+Design: [ADR 0010](./docs/adr/0010-subagents.md).
+
 ## Other CLI commands
 
 ```bash
 # a user (the password is read from stdin; in interactive mode it is typed without echo)
 read -rs -p 'Password: ' PW && printf '%s' "$PW" | docker compose exec -T app node dist/cli.js create-user bob --role member; unset PW
 
-# rebuild the whole search index
+# rebuild the whole search index (prints the number of documents: skills and subagents)
 docker compose exec app node dist/cli.js reindex
 ```
 
