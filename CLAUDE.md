@@ -20,7 +20,7 @@ Rules (checked automatically — `pnpm arch`, dependency-cruiser):
 - Modules talk to each other only through a module's public `index.ts` or through domain events. Importing another module's internals is forbidden.
 - `infrastructure` and `interfaces` are not imported from `domain` or `application`.
 - `packages/cli` does not import `apps/*` (rule `cli-no-apps`): it talks to the server only over HTTP; shared types come from `@skills/contracts`. Effects (network, output, env) go through `CliEnv`; tests use `test/fake-env.ts` and the fake GitHub in `test/tarball.ts`.
-- Each module owns its DB schema (`catalog.*`, `search.*`, `identity.*`); other modules' tables are never read directly. Cross-cutting concerns live in the `platform` schema (outbox, audit, migrations).
+- Each module owns its DB schema (`catalog.*` incl. `catalog.subagents*`, `search.*`, `identity.*`); other modules' tables are never read directly. Cross-cutting concerns live in the `platform` schema (outbox, audit, migrations).
 
 Layout: `apps/server/src/modules/{catalog,search,identity}/{domain,application,infrastructure,interfaces}`, `apps/server/src/shared-kernel` (Result, errors, events, Clock, the AuditLog port), `apps/server/src/platform` (composition), `packages/contracts` (REST zod schemas), `packages/cli` (the `skills-registry` client CLI: import from GitHub, `update`, `install`; spec `docs/superpowers/specs/2026-10-29-client-cli-design.md`).
 
@@ -28,6 +28,8 @@ Layout: `apps/server/src/modules/{catalog,search,identity}/{domain,application,i
 
 - **Skill** — aggregate: `slug`, `status` (`active` | `archived`), `currentVersion`.
 - **SkillVersion** — an immutable version of a skill: number, `name`, `description`, manifest, author, message, `restoredFrom?`.
+- **Subagent** — aggregate next to Skill (ADR 0010): `slug`, `folderId`, `status`, `currentVersion`; one file `SUBAGENT.md` (frontmatter `name`, `description`, `tools`, `model`, `skills`). Installed by the CLI as `.claude/agents/<slug>.md`; its skills load over MCP at run time.
+- **SubagentVersion** — an immutable version of a subagent: number, `name`, `description`, `tools` (null = inherit all), `model`, `skills`, content sha256, author, message, `restoredFrom?`.
 - **Manifest** — the version's file manifest: path → sha256 and size; must contain `SKILL.md` with frontmatter.
 - **Slug** — unique kebab-case skill identifier; matches `name` in the frontmatter.
 - **Blob** — file content addressed by sha256 (the `BlobStore` port).

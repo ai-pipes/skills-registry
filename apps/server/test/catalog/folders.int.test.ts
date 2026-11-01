@@ -91,7 +91,7 @@ describe('folder use cases on Postgres', () => {
     const before = await archivedEvents();
 
     const r = await archiveFolder(deps, { slug: 'devops', actorId: ACTOR });
-    expect(r).toEqual({ ok: true, value: { archivedSkills: 3 } });
+    expect(r).toEqual({ ok: true, value: { archivedSkills: 3, archivedSubagents: 0 } });
     expect((await archivedEvents()) - before).toBe(3);
     expect(await Promise.all(['a', 'b', 'c', 'd', 'other'].map(statusOf))).toEqual([
       'archived',
