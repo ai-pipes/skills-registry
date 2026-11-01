@@ -150,7 +150,15 @@ export class RegistryClient {
   /** `null` when the subagent does not exist. */
   async getSubagent(slug: string): Promise<SubagentView | null> {
     try {
-      return await this.get(`/api/subagents/${encodeURIComponent(slug)}`, SubagentView);
+      const view = await this.get(`/api/subagents/${encodeURIComponent(slug)}`, SubagentView);
+      if (view.slug !== slug) {
+        throw new RegistryError(
+          0,
+          'slug_mismatch',
+          `the server answered with subagent ${view.slug}`,
+        );
+      }
+      return view;
     } catch (e) {
       if (e instanceof RegistryError && e.status === 404) return null;
       throw e;

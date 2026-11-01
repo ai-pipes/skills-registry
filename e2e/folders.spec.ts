@@ -84,7 +84,9 @@ test('create a folder and a skill in it, filter by folder, archive the folder', 
     const row = page.getByRole('row').filter({ hasText: folder });
     await row.getByRole('button', { name: 'Archive' }).click();
     const dialog = page.getByRole('alertdialog').or(page.getByRole('dialog'));
-    await expect(dialog).toContainText('1 active skill will be archived');
+    await expect(dialog).toContainText(
+      '1 active skill and any active subagents in it will be archived',
+    );
     await dialog.getByRole('button', { name: 'Archive' }).click();
     await expect(page.getByText(`Folder “${folderName}” archived`)).toBeVisible();
     await page.goto(`/skills?${new URLSearchParams({ folder, status: 'archived' })}`);

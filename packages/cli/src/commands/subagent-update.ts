@@ -17,16 +17,16 @@ const options = {
 async function updateOne(s: Scope, slug: string, yes: boolean): Promise<boolean> {
   const { env } = s;
   if (!Object.hasOwn(s.manifest.subagents, slug)) {
-    env.err(`error: ${slug} is not installed`);
+    env.err(`error: ${safe(slug)} is not installed`);
     return false;
   }
   const view = await s.client.getSubagent(slug);
   if (view === null) {
-    env.err(`error: ${slug} is no longer in the registry`);
+    env.err(`error: ${safe(slug)} is no longer in the registry`);
     return false;
   }
   if (view.status === 'archived') {
-    env.err(`error: ${slug} is archived in the registry`);
+    env.err(`error: ${safe(slug)} is archived in the registry`);
     return false;
   }
   const path = join(s.dir, `${slug}.md`);
@@ -42,11 +42,11 @@ async function updateOne(s: Scope, slug: string, yes: boolean): Promise<boolean>
     return false;
   }
   if (state.version === view.version) {
-    env.out(`${slug} is up to date (v${view.version})`);
+    env.out(`${safe(slug)} is up to date (v${view.version})`);
     return true;
   }
   const oldText = await readFile(path, 'utf8');
-  return applyUpdate(s, state, view, { yes, mcpServer: state.mcpServer, oldText });
+  return applyUpdate(s, slug, state, view, { yes, mcpServer: state.mcpServer, oldText });
 }
 
 /** `subagent update [<slug>...] [-g] [--yes]`: every installed subagent when no slug is given. */
@@ -63,7 +63,7 @@ export const subagentUpdate: Command = async (args, env) => {
     try {
       return await updateOne(s, slug, values.yes ?? false);
     } catch (e) {
-      env.err(`error: ${slug}: ${safe(e instanceof Error ? e.message : String(e))}`);
+      env.err(`error: ${safe(slug)}: ${safe(e instanceof Error ? e.message : String(e))}`);
       return false;
     }
   });

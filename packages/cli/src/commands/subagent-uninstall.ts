@@ -23,7 +23,7 @@ async function uninstallOne(s: Scope, slug: string): Promise<boolean> {
     s.env.err(`skipped ${path}: not installed by skills-registry`);
     return false;
   }
-  if (state === 'absent') s.env.out(`${slug} is not installed`);
+  if (state === 'absent') s.env.out(`${safe(slug)} is not installed`);
   else {
     await rm(path, { force: true });
     s.env.out(`removed ${path}`);
@@ -55,7 +55,7 @@ export const subagentUninstall: Command = async (args, env) => {
     try {
       return await uninstallOne(s, slug);
     } catch (e) {
-      env.err(`error: ${slug}: ${safe(e instanceof Error ? e.message : String(e))}`);
+      env.err(`error: ${safe(slug)}: ${safe(e instanceof Error ? e.message : String(e))}`);
       return false;
     }
   });

@@ -59,11 +59,11 @@ function changedFields(oldText: string, newText: string, toolsMoved: boolean): s
  */
 export async function applyUpdate(
   s: Scope,
+  slug: string,
   entry: InstalledEntry,
   view: SubagentView,
   opts: { yes: boolean; mcpServer: string; oldText: string },
 ): Promise<boolean> {
-  const { slug } = view;
   const change = toolsChange(entry.tools, view.tools);
   if (change !== null && !opts.yes) {
     s.env.err(`permissions changed for ${safe(slug)}: ${safe(change)}; rerun with --yes to apply`);
@@ -81,7 +81,7 @@ export async function applyUpdate(
   await writeInstalled(s.dir, s.manifest);
   const fields = changedFields(opts.oldText, text, change !== null);
   s.env.out(
-    `updated ${slug} v${entry.version} → v${view.version} (${fields.length > 0 ? fields.join(', ') : 'no field changes'})`,
+    `updated ${safe(slug)} v${entry.version} → v${view.version} (${fields.length > 0 ? fields.join(', ') : 'no field changes'})`,
   );
   return true;
 }

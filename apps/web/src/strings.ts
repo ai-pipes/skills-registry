@@ -240,8 +240,8 @@ export const strings = {
     archiveTitle: (name: string) => `Archive folder “${name}”?`,
     archiveDescription: (count: number) =>
       count === 0
-        ? 'The folder has no active skills. You can restore it later.'
-        : `${count} active ${plural(count, { one: 'skill', other: 'skills' })} will be archived along with the folder.`,
+        ? 'The folder has no active skills. Any active subagents in it will be archived along with the folder. You can restore it later.'
+        : `${count} active ${plural(count, { one: 'skill', other: 'skills' })} and any active subagents in it will be archived along with the folder.`,
     archivedToast: (name: string) => `Folder “${name}” archived`,
     restoreTitle: (name: string) => `Restore folder “${name}”?`,
     restoreDescription: 'Skills in the folder stay archived; restore them one by one.',

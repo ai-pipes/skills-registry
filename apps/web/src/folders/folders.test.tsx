@@ -70,7 +70,9 @@ describe('FoldersPage', () => {
     await user.click(within(row).getByRole('button', { name: 'Archive' }));
     const dialog = await screen.findByRole('alertdialog');
     expect(within(dialog).getByText('Archive folder “General”?')).toBeTruthy();
-    expect(dialog.textContent).toContain('1 active skill will be archived');
+    expect(dialog.textContent).toContain(
+      '1 active skill and any active subagents in it will be archived',
+    );
     await user.click(within(dialog).getByRole('button', { name: 'Archive' }));
     await waitFor(() => expect(called).toBe(true));
     expect(await screen.findByText('Folder “General” archived')).toBeTruthy();
