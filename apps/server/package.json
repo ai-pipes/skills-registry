@@ -12,7 +12,7 @@
     "@node-rs/argon2": "2.2.2",
     "@skills/contracts": "workspace:*",
     "diff": "9.0.0",
-    "hono": "4.13.14",
+    "hono": "4.13.16",
     "openid-client": "6.8.8",
     "pino": "10.4.0",
     "postgres": "3.4.9",
