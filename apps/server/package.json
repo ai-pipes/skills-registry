@@ -21,6 +21,6 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "2.4.0",
-    "@testcontainers/postgresql": "12.2.1"
+    "@testcontainers/postgresql": "12.2.2"
   }
 }
